@@ -126,7 +126,7 @@ dmypy.json
 
 
 # Repository specific
-deeppularnet/logs/**
-deeppularnet/trained_models/**
-deeppularnet/datasets/**
+deeppulsarnet/logs/**
+deeppulsarnet/trained_models/**
+deeppulsarnet/datasets/**
 log_training_runs.txt
