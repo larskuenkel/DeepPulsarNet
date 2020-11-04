@@ -123,3 +123,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# Repository specific
+deeppularnet/logs/**
+deeppularnet/trained_models/**
+deeppularnet/datasets/**
+log_training_runs.txt
