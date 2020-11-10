@@ -8,17 +8,17 @@ from model.model_tcn_multi import TemporalConvNet_multi
 from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
 from model.model_classifier import classifier
-from model.model_regressor_rnn import regressor_rnn
-from model.model_regressor_tcn import regressor_tcn
-from model.model_regressor_acf import regressor_acf
-from model.model_regressor_fft import regressor_fft
+#from model.model_regressor_rnn import regressor_rnn
+#from model.model_regressor_tcn import regressor_tcn
+#from model.model_regressor_acf import regressor_acf
+# from model.model_regressor_fft import regressor_fft
 from model.model_regressor_ffa import regressor_ffa
-from model.model_regressor_fft_new import regressor_fft_new
-from model.model_regressor_stft import regressor_stft
+# from model.model_regressor_fft_new import regressor_fft_new
+# from model.model_regressor_stft import regressor_stft
 from model.model_regressor_stft import regressor_stft_conv
 from model.model_regressor_stft import regressor_stft_comb
-from model.model_regressor_stft import regressor_stft_multi
-from model.model_regressor_simple import regressor_simple
+# from model.model_regressor_stft import regressor_stft_multi
+# from model.model_regressor_simple import regressor_simple
 from model.model_classifier_filter import classifier_filter
 from torch.utils.checkpoint import checkpoint
 import numpy as np
@@ -66,13 +66,13 @@ class pulsar_net(nn.Module):
         self.no_pad = no_pad
         self.binary = binary
         self.tcn_class = tcn_class
-        self.down_fac = self.stride * self.pool ** len(model_para.encoder_channels)
+        self.down_fac = self.stride * \
+            self.pool ** len(model_para.encoder_channels)
 
-        in_channels = input_shape[0]
         self.int_chan = self.input_shape[0] + add_chan
         self.input_shape_2 = (self.int_chan, self.input_shape[1])
 
-        self.output_chan = tcn_channels[2]
+        self.output_chan = model_para.output_channels
 
         self.out_length = self.input_shape[1] // self.down_fac - self.crop * 2
 
@@ -112,7 +112,9 @@ class pulsar_net(nn.Module):
         self.use_output_layer = 1
 
         self.output_layer = OutputLayer(
-            dec_input, *out_layer, dropout=dropout[2], kernel=tcn_kernel[3], residual=residual, output_channels=self.output_chan)
+            dec_input, model_para.output_intermediate_channels, model_para.output_final_nonlin,
+            dropout=model_para.output_dropout, kernel=model_para.output_kernel,
+            output_channels=self.output_chan)
 
         rnn_input = tcn_channels[-1]
 
@@ -346,14 +348,7 @@ class pulsar_net(nn.Module):
             (input.shape[0], self.used_classifiers, self.final_output)).cuda()
         # switch = 0
         j = 0
-        if self.output_layer.use_direct_class:
-            encoded, class_tensor[:, j, :] = self.output_layer(encoded)
-            # switch = 1
-            j += 1
-            if not self.use_multi_class:
-                return encoded, class_tensor, torch.empty(0, requires_grad=True)
-        else:
-            encoded = self.output_layer(encoded)
+        encoded = self.output_layer(encoded)
         if self.mode == 'autoencoder':
             return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
 

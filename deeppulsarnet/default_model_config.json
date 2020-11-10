@@ -21,5 +21,10 @@
 	"tcn_2_groups": 4,
 	"tcn_2_dropout": 0,
 	"tcn_2_downsample_levels": 1,
-	"tcn_2_downsample_factor": 4
+	"tcn_2_downsample_factor": 4,
+	"output_kernel": 5,
+	"output_intermediate_channels": 8,
+	"output_channels": 2,
+	"output_dropout": 0,
+	"output_final_nonlin": false
 }

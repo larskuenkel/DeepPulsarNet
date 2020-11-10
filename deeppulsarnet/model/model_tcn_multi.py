@@ -1,10 +1,5 @@
 import torch.nn as nn
-from torch.nn.utils import weight_norm
-from torch.nn import functional as F
 import torch
-from model.model_decoder import pulsar_decoder
-from model.model_encoder import pulsar_encoder
-from model.shakedrop import ShakeDrop1d
 from model.TemporalBlock import TemporalBlock
 from model.TemporalBlock import TemporalBlock_2d
 
