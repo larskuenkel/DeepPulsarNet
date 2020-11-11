@@ -26,6 +26,8 @@ import sys
 import torch.nn.functional as F
 import scipy.signal
 import matplotlib.pyplot as plt
+import argparse
+import json
 
 
 class pulsar_net(nn.Module):
@@ -36,10 +38,10 @@ class pulsar_net(nn.Module):
                  mode='full', tcn_class=[0], acf_class=[0],
                  tcn_channels=0, dec_channels=[0], add_chan=0, no_reg=0, rnn_dec_args=[[0], 0, 0, 0], bce_weight=1, crop=0,
                  fft_class=[0], simple_class=0, norm=False, block_mode='add', reduce_mode='avg', tcn_mode='tcn_multi',
-                 filter_size=0, clamp=[65, -10, 10], dec_mode='conv', out_layer=[0, 8, 1], class_mode='simple', multi_class=False,
+                 filter_size=0, clamp=[65, -10, 10], dec_mode='conv', class_mode='simple', multi_class=False,
                  gauss=(27, 15 / 4, 1, 1), enc_mode='conv', pool_multi=4, aa=False, stft=[10000], dm0='none',
                  cmask=False, rfimask=False, crop_augment=0., ffa=[5, 2, 8, 10], ffa_args=[0.07, 1.1, 15, 80, 1],
-                 dm0_class=False):
+                 dm0_class=False, class_configs=['']):
         super().__init__()
 
         print('Creating neural net.')
@@ -94,8 +96,6 @@ class pulsar_net(nn.Module):
         else:
             tcn_input = self.input_shape[0]
 
-        # self.no_out_layer = False
-
         if model_para.tcn_2_layers:
             self.use_tcn = 1
             self.tcn = TemporalConvNet_multi(model_para.tcn_2_channels, model_para.tcn_2_channels_increase,
@@ -118,7 +118,7 @@ class pulsar_net(nn.Module):
 
         rnn_input = tcn_channels[-1]
 
-        self.create_classifier_levels(class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, dropout=dropout[3:],
+        self.create_classifier_levels(class_configs, class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, dropout=dropout[3:],
                                       crop_augment=crop_augment, tcn_class=tcn_class, ffa_class=ffa, ffa_args=ffa_args, dm0_class=dm0_class)
 
         self.create_loss_func()
@@ -140,7 +140,7 @@ class pulsar_net(nn.Module):
 
         # self.crop = self.tcn.biggest_pad
 
-    def create_classifier_levels(self, class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, bidirectional=True, dropout=[0, 0],
+    def create_classifier_levels(self, class_configs, class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, bidirectional=True, dropout=[0, 0],
                                  crop_augment=0., tcn_class=[0], ffa_class=[5, 2, 8, 10], overwrite=True, ffa_args=[0.07, 1.1, 15, 80, 1], dm0_class=False):
         self.class_mode = class_mode
         self.dm0_class = dm0_class
@@ -180,89 +180,51 @@ class pulsar_net(nn.Module):
         if not hasattr(self, 'output_chan'):
             self.output_chan = 1
 
-        if 'fft' in self.class_mode:
-            # if 'fft_coh' in self.class_mode:
-            #     use_coherent = True
-            # else:
-            #     use_coherent = False
-            use_coherent = False
-            self.classifier_fft = regressor_fft(
-                fft_class, no_reg, coherent=use_coherent)
-            self.classifiers.append(self.classifier_fft)
-        if 'fft_new' in self.class_mode:
-            self.classifier_fft = regressor_fft_new(fft_class, no_reg)
-            self.classifiers.append(self.classifier_fft)
-        if 'tcn' in self.class_mode:
-            self.classifier_tcn = regressor_tcn(
-                1, tcn_class, [4, 1], dropout[1], no_reg)
-            self.classifiers.append(self.classifier_tcn)
-        if 'acf' in self.class_mode:
-            self.classifier_acf = regressor_acf(acf_class, no_reg)
-            self.classifiers.append(self.classifier_acf)
-        if 'rnn' in self.class_mode:
-            self.classifier_rnn = regressor_rnn(
-                self.output_chan, rnn[0], 2, rnn[1], bidirectional, drnn=rnn[2], no_reg=no_reg)
-            self.classifiers.append(self.classifier_rnn)
-        if 'simple' in self.class_mode:
-            self.classifier_simple = regressor_simple()
-            self.classifiers.append(self.classifier_simple)
-        if 'stft' in self.class_mode:
-            for block in range(int(stft[5])):
-                factor = 2 ** block
-                stft_para = [int(stft[0] // factor), stft[1],
-                             int(stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-                setattr(self, "classifier_stft_%d" % block, regressor_stft(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                           norm=int(stft[7]), crop_augment=crop_augment))
-                self.classifiers.append(
-                    getattr(self, "classifier_stft_%d" % block))
-        if 'stft_conv' in self.class_mode:
-            if stft[0] == 0:
-                ini_length = self.out_length
-                height = 1
-            else:
-                ini_length = stft[0]
-                height = int(
-                    np.floor((self.out_length - stft[0]) / stft[6])) + 1
-            for block in range(int(stft[5])):
-                factor = 2 ** block
-                current_length = int(
-                    np.floor(ini_length / ((height - 1) * stft[6] + 1)))
-                stft_para = [int(current_length), stft[1], int(
+        for config in class_configs:
+            with open(f"./model_configs/{config}") as json_data_file:
+                class_para_dict = json.load(json_data_file)
+            class_para = argparse.Namespace(**class_para_dict)
+
+            # if 'stft_conv' in self.class_mode:
+            if class_para.class_type == 'stft_conv':
+                if stft[0] == 0:
+                    ini_length = self.out_length
+                    height = 1
+                else:
+                    ini_length = stft[0]
+                    height = int(
+                        np.floor((self.out_length - stft[0]) / stft[6])) + 1
+                for block in range(int(stft[5])):
+                    factor = 2 ** block
+                    current_length = int(
+                        np.floor(ini_length / ((height - 1) * stft[6] + 1)))
+                    stft_para = [int(current_length), stft[1], int(
+                        stft[2]), int(stft[3]), int(stft[4]), stft[6]]
+                    setattr(self, "classifier_stft_%d%s" % (block, added), regressor_stft_conv(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
+                                                                                               norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]), height_pooling=int(stft[10]),
+                                                                                               input_length=self.out_length, dm0_class=dm0_class))
+                    self.classifiers.append(
+                        getattr(self, "classifier_stft_%d%s" % (block, added)))
+                    height += stft[11]
+            # if 'ffa' in self.class_mode:
+            if class_para.class_type == 'ffa':
+                setattr(self, "classifier_ffa%s" % added, regressor_ffa(ffa_class, input_chan=self.output_chan, input_length=self.out_length,
+                                                                        ffa_args=ffa_args, dm0_class=dm0_class))
+                self.classifiers.append(getattr(self, "classifier_ffa%s" % added))
+
+            # if 'stft_comb' in self.class_mode:
+            if class_para.class_type == 'stft':
+                stft_para = [self.out_length, stft[1], int(
                     stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-                setattr(self, "classifier_stft_%d%s" % (block, added), regressor_stft_conv(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                                           norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]), height_pooling=int(stft[10]),
-                                                                                           input_length=self.out_length, dm0_class=dm0_class))
-                self.classifiers.append(
-                    getattr(self, "classifier_stft_%d%s" % (block, added)))
-                height += stft[11]
-        if 'ffa' in self.class_mode:
-            setattr(self, "classifier_ffa%s" % added, regressor_ffa(ffa_class, input_chan=self.output_chan, input_length=self.out_length,
-                                                                    ffa_args=ffa_args, dm0_class=dm0_class))
-            self.classifiers.append(getattr(self, "classifier_ffa%s" % added))
-        if 'stft_multi' in self.class_mode:
-            for block in range(int(stft[5])):
-                factor = 2 ** block
-                stft_para = [int(stft[0] // factor), stft[1],
-                             int(stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-                setattr(self, "classifier_stft_%d" % block, regressor_stft_multi(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                                 norm=int(stft[7]), crop_augment=crop_augment))
-                self.classifiers.append(
-                    getattr(self, "classifier_stft_%d" % block))
-        if 'stft_comb' in self.class_mode:
-            stft_para = [self.out_length, stft[1], int(
-                stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-            setattr(self, "classifier_stft_comb", regressor_stft_comb(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                      norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]),
-                                                                      input_length=self.out_length, blocks=int(stft[5]), added_height=int(stft[11]),
-                                                                      dm0_class=dm0_class))
-            self.classifiers.append(getattr(self, "classifier_stft_comb"))
+                setattr(self, "classifier_stft_comb", regressor_stft_comb(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
+                                                                          norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]),
+                                                                          input_length=self.out_length, blocks=int(stft[5]), added_height=int(stft[11]),
+                                                                          dm0_class=dm0_class))
+                self.classifiers.append(getattr(self, "classifier_stft_comb"))
         # else:
         #     self.classifier = None
 
         self.used_classifiers = len(self.classifiers)
-
-        # if out_layer[5] and out_layer[0]:
-        #     self.used_classifiers += 1
 
         if multi_class or self.used_classifiers > 1:
             self.use_multi_class = 1

@@ -167,9 +167,6 @@ def main():
                         help='Choose mode for the decoder. conv, ups')
     parser.add_argument('--enc_mode', type=str, default='conv',
                         help='Choose mode for the multi layer encoder. conv, pool')
-    parser.add_argument('--out_layer', type=int, nargs=6,
-                        default=(0, 8, 1, 3, 1, 1), help='Setting for the output layer.[RNN, intermediate, tanh, out_rnn, layers_rnn, direct_class]\
-                        Possile vals for RNN: 0(tcn), 1(1directional), 2(bidirectional)')
     parser.add_argument('--shift', action='store_true',
                         help='Shift the target according to the DM')
     parser.add_argument('--loss_weights', type=float, nargs=4,
@@ -236,12 +233,15 @@ def main():
     parser.add_argument('--model_parameter', type=str, action='append',
                         help='Change parameters of the model. Usage: --model_parameter "tcn_1_layer 4, encoder_conv_groups 2".\
                         Separate multiple parameters with a comma and use the quotation marks.')
+    parser.add_argument('--class_configs', type=str, default=['class_stft.json'], nargs='+',
+                        help='Name of the config files containing the hyperparameters of the classifiersin the model_configs folder.\
+                        --class_configs class_1.json class_2.json')
 
     args = parser.parse_args()
 
     print(args.model_parameter)
     # Reading model parameters
-    with open(args.model_config) as json_data_file:
+    with open(f"./model_configs/{args.model_config}") as json_data_file:
         model_para_dict = json.load(json_data_file)
 
     # Converting to Namespace for easier parsing
@@ -479,11 +479,12 @@ def main():
                          fft_class=args.fft_class, multi_class=args.multi_class,
                          norm=args.norm, block_mode=args.block_mode, reduce_mode=args.reduce_mode, tcn_mode=args.tcn_mode,
                          filter_size=args.filter_size, clamp=args.clamp, dec_mode=args.dec_mode,
-                         out_layer=args.out_layer, class_mode=args.class_mode,
+                         class_mode=args.class_mode,
                          gauss=args.gauss, enc_mode=args.enc_mode, pool_multi=args.pool_multi,
                          stft=args.stft, dm0=args.dm0_mode, cmask=args.cmask, rfimask=args.rfimask,
                          crop_augment=args.crop_augment, ffa=args.ffa,
-                         ffa_args=args.ffa_args, dm0_class=args.dm0_class).to(device)
+                         ffa_args=args.ffa_args, dm0_class=args.dm0_class,
+                         class_configs=args.class_configs).to(device)
         net.edge = train_loader.dataset.edge
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1, ada=args.ada)

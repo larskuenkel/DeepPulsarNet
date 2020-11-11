@@ -86,149 +86,6 @@ class Height_conv(nn.Module):
             return output
 
 
-class regressor_stft(nn.Module):
-    def __init__(self, stft_para, no_reg, dropout=[0, 0], input_chan=1, norm=0, crop_augment=0.):
-        super().__init__()
-        self.no_reg = no_reg
-        if self.no_reg:
-            self.final_output = 2
-        else:
-            self.final_output = 4
-        self.stft_length = stft_para[0]
-        self.crop = int(stft_para[1] * (self.stft_length // 2))
-        self.channels = stft_para[2]
-        self.pool_size = stft_para[3]
-        self.num_layers = stft_para[4]
-        self.hop_length = int(stft_para[5] * self.stft_length)
-        self.input_chan = input_chan
-        self.norm = norm
-        self.crop_augment = crop_augment
-        print(stft_para)
-
-        self.use_center = False
-
-        self.ini_dropout = nn.Dropout(dropout[0])
-
-        if self.pool_size:
-            # self.pool = nn.AdaptiveMaxPool1d(
-            # self.pool_size)
-            self.rnn_input_size = self.pool_size * self.input_chan
-        else:
-            self.rnn_input_size = self.crop * self.input_chan
-
-        self.rnn = nn.LSTM(self.rnn_input_size, self.channels,
-                           num_layers=self.num_layers, batch_first=True, dropout=dropout[1])
-
-        # self.final = nn.Sequential(nn.Linear(self.channels, self.channels // 2),
-        #                            nn.LeakyReLU(),
-        #                            nn.Linear(self.channels // 2, self.final_output))
-        self.final = nn.Sequential(nn.Linear(self.channels, self.final_output))
-
-    def forward(self, x):
-        if hasattr(self, 'ini_dropout'):
-            x = self.ini_dropout(x)
-        if not hasattr(self, 'hop_length'):
-            self.hop_length = None
-        if not hasattr(self, 'norm'):
-            self.norm = 0
-
-        if hasattr(self, 'crop_augment'):
-            if self.training and self.crop_augment != 0.:
-                used_crop = int(np.random.uniform(
-                    self.crop - self.crop * self.crop_augment, self.crop + self.crop * self.crop_augment))
-            else:
-                used_crop = self.crop
-        else:
-            used_crop = self.crop
-        stft = compute_stft(x, self.stft_length, pool_size=self.pool_size,
-                            hop_length=self.hop_length, norm=self.norm, crop=used_crop)
-
-        (out_rnn, hidden) = self.rnn(stft, None)
-
-        output = self.final(out_rnn[:, -1, :])
-
-        return output
-
-
-class regressor_stft_multi(nn.Module):
-    def __init__(self, stft_para, no_reg, dropout=[0, 0], input_chan=1, norm=0, crop_augment=0.):
-        super().__init__()
-        self.no_reg = no_reg
-        if self.no_reg:
-            self.final_output = 2
-        else:
-            self.final_output = 4
-        self.stft_length = stft_para[0]
-        self.crop = int(stft_para[1] * (self.stft_length // 2))
-        self.channels = stft_para[2]
-        self.pool_size = stft_para[3]
-        self.num_layers = stft_para[4]
-        self.hop_length = int(stft_para[5] * self.stft_length)
-        self.input_chan = input_chan
-        print(stft_para)
-
-        self.norm = norm
-        self.crop_augment = crop_augment
-
-        self.use_center = False
-
-        self.ini_dropout = nn.Dropout(dropout[0])
-
-        if self.pool_size:
-            # self.pool = nn.AdaptiveMaxPool1d(
-            # self.pool_size)
-            self.rnn_input_size = self.pool_size * self.input_chan
-        else:
-            self.rnn_input_size = self.crop * self.input_chan
-
-        channel_factor = 1
-
-        self.hidden_net = nn.Sequential(nn.Linear(self.pool_size * self.input_chan, self.channels * channel_factor),
-                                        nn.LeakyReLU(),
-                                        nn.Linear(self.channels * channel_factor, self.channels))
-
-        self.cell_net = nn.Sequential(nn.Linear(self.pool_size * self.input_chan, self.channels * channel_factor),
-                                      nn.LeakyReLU(),
-                                      nn.Linear(self.channels * channel_factor, self.channels))
-
-        self.rnn = nn.LSTM(self.rnn_input_size, self.channels,
-                           num_layers=self.num_layers, batch_first=True, dropout=dropout[1])
-
-        # self.final = nn.Sequential(nn.Linear(self.channels, self.channels // 2),
-        #                            nn.LeakyReLU(),
-        #                            nn.Linear(self.channels // 2, self.final_output))
-        self.final = nn.Sequential(nn.Linear(self.channels, self.final_output))
-
-    def forward(self, x):
-        if hasattr(self, 'ini_dropout'):
-            x = self.ini_dropout(x)
-
-        if hasattr(self, 'crop_augment'):
-            if self.training and self.crop_augment != 0.:
-                used_crop = int(np.random.uniform(
-                    self.crop - self.crop * self.crop_augment, self.crop + self.crop * self.crop_augment))
-            else:
-                used_crop = self.crop
-        else:
-            used_crop = self.crop
-
-        large_crop = int(used_crop / self.stft_length * x.shape[2])
-
-        stft_large = compute_stft(
-            x, 0, pool_size=self.pool_size, crop=large_crop, hop_length=0, norm=self.norm)
-        stft_small = compute_stft(x, self.stft_length, pool_size=self.pool_size,
-                                  crop=used_crop, hop_length=self.hop_length, norm=self.norm)
-
-        hidden_state = self.hidden_net(stft_large[:, 0, :]).unsqueeze(0)
-        cell_state = self.cell_net(stft_large[:, 0, :]).unsqueeze(0)
-
-        (out_rnn, hidden) = self.rnn(stft_small, (hidden_state, cell_state))
-
-        output = self.final(out_rnn[:, -1, :])
-
-        return output
-
-
 class regressor_stft_conv(nn.Module):
     def __init__(self, stft_para, no_reg, dropout=[0, 0], input_chan=1, norm=0, crop_augment=0., harmonics=0, layer_number=1, height_pooling=1,
                  input_length=0, dm0_class=False):
@@ -587,66 +444,6 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
 
     return out_stft
 
-def compute_stft_custom(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0):
-    if length == 0:
-        length = x.shape[2]
-    if hop_length == 0:
-        hop_length = length
-    x = x - x.mean(dim=2, keepdim=True)
-
-
-    added_harmonics = 0
-    block = 0
-    switch_harm = 0
-
-    for harm_counter in range(2 ** harmonics):
-        power_stft = stft_custom(x[:, 0, :], length, hop_length=hop_length, normalized=True, crop=crop, factor=harm_counter)
-
-        if harm_counter == 0:
-            added = power_stft
-        else:
-            added = added + power_stft
-        added_harmonics += 1
-        if added_harmonics == 2 ** block:
-            if pool_size:
-                single_out = F.adaptive_max_pool1d(
-                    added.transpose(2, 1), pool_size).transpose(2, 1)
-            else:
-                single_out = added
-            if not switch_harm:
-                out_harm = single_out.unsqueeze(3)
-                switch_harm = 1
-            else:
-                out_harm = torch.cat((out_harm, single_out.unsqueeze(
-                    3) / np.sqrt(added_harmonics)), dim=3)
-            block += 1
-
-    out_stft = out_harm#.transpose(2, 1)
-
-    if norm:
-        std = out_stft.view(out_stft.shape[0], -1).std(dim=1)
-        out_stft = out_stft / std[:, None, None]
-
-    return out_stft
-
-
-def stft_custom(input, n_fft, hop_length=None, normalized=False, factor=0, crop=None):
-    if hop_length == None:
-        hop_length = int(np.floor(n_fft / 4))
-    old_length = input.shape[1]
-    chunks = int((old_length - n_fft) // hop_length+1)
-    chunked_tensor = torch.zeros((input.shape[0],chunks, n_fft)).cuda()
-    for i in range(chunks):
-        chunked_tensor[:,i,:] = input[:,i*hop_length:i*hop_length+n_fft]
-    pad = (factor)*(n_fft // 2)
-    padded_tensor = F.pad(chunked_tensor, (pad,pad,0,0,0,0))
-    out_fft = torch.rfft(padded_tensor, signal_ndim=1, onesided=True)
-    if normalized:
-        out_fft = out_fft / np.sqrt(n_fft)
-    if crop==None:
-        crop = n_fft
-    power_fft = out_fft[:,:,:crop,0] ** 2 + out_fft[:,:,:crop,1] ** 2
-    return power_fft
 
 class regressor_stft_comb(nn.Module):
     def __init__(self, stft_para, no_reg, dropout=[0, 0], input_chan=1, norm=0, crop_augment=0., harmonics=0, layer_number=1,
@@ -719,26 +516,6 @@ class regressor_stft_comb(nn.Module):
             self.heights.append(height)
             pool = max_height//height
             setattr(self, f"pool_{current_length}",nn.AvgPool3d((1, pool, 1), stride=(1,pool,1), padding=(0, pool // 2, 0)))
-                # layers += [nn.AvgPool3d((1, pool, 1), stride=(1,pool,1), padding=(0, pool // 2, 0)),
-                #     nn.Conv3d(1, current_out, (height, self.kernel, 1), stride=(
-                #         1, 1, 1), padding=(0, self.kernel // 2, 0)),
-            #     ]
-            #     for i in range(layer_number):
-            #         current_in = current_out
-            #         current_out += self.channels
-            #         dilation = 2 ** (i+1)
-            #         pad = (self.kernel // 2 )*dilation
-
-            #         layers += [nn.LeakyReLU(),
-            #         nn.Conv3d(current_in, current_out, (1, self.kernel, 1), stride=(
-            #             1, 1, 1), padding=(0, pad, 0), dilation=(1,dilation,1))]
-            #     layers += [nn.LeakyReLU(),
-            #         nn.Conv3d(current_out, 1, (1, 1, 1), stride=(
-            #             1, 1, 1)),
-            #         ]
-            # setattr(self, f"conv_{current_length}",nn.Sequential(*layers))
-
-            #height += added_height
             print(height)
 
         current_in = 1
@@ -767,11 +544,6 @@ class regressor_stft_comb(nn.Module):
         self.conv = nn.Sequential(*layers)
 
         self.harmpool = (self.harmonics+1) * self.input_chan
-        # self.harm_pool = nn.MaxPool3d((1,1,self.harmpool), stride=(1,1,self.harmpool))
-
-        self.combine = nn.Sequential(nn.Conv1d(self.blocks, self.blocks*4, kernel_size=5, stride=1),
-                nn.LeakyReLU(),
-                nn.Conv1d(self.blocks*4, 1, kernel_size=1, stride=1))
 
         self.glob_pool = nn.Sequential(nn.AdaptiveMaxPool2d(
                                            (1,1), return_indices=True),
@@ -816,8 +588,6 @@ class regressor_stft_comb(nn.Module):
             combined_pool[:, k:k+current_height,:,:] = out_pool[:,:,:,:]
             j += 1
             k += current_height
-
-        # out_conv_combined = self.combine(combined_conv)
 
         out_conv = self.conv(combined_pool)
 
