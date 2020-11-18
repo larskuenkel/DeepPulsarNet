@@ -53,9 +53,9 @@ def main():
                         default=0, help='Weight decay. Default: 0')
     parser.add_argument('--groups', type=int, default=[2, 1, 1, 1], nargs='+',
                         help='Channels per group in the group norm.')
-    parser.add_argument('--path', type=str, default='zero_all.csv',
+    parser.add_argument('--path', type=str, 
                         help='Set the path of the data csv.')
-    parser.add_argument('--path_noise', type=str, default='palfa_test_noise_normal_minus8.csv',
+    parser.add_argument('--path_noise', type=str,
                         help='Set the path of the noise csv.')
     # parser.add_argument('--weights', type=str, default='', help='Load saved weights.')
     parser.add_argument('--model', type=str, default='',
@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--name', type=str, default='',
                         help='Name of the saved weights and model.')
     parser.add_argument('--noise', type=float, nargs='+',
-                        default=[0.01, 1, 50, 0], help='Define how much noise is added. [start_value, step_size, max, use_saved]')
+                        default=[0.01, 10, 1, 0], help='Define how much noise is added. [start_value, step_size, max, use noise from loaded model]')
     parser.add_argument('--linear', type=int, nargs='+',
                         default=[128, 32], help='Define the hidden layers in the regressor')
     parser.add_argument('--stride', type=int, default=2,
@@ -288,22 +288,17 @@ def main():
 
     torch.set_num_threads(4)
     print(torch.get_num_threads())
-    # if args.simple_class:
-    #     args.no_reg = 1
 
     # torch.backends.cudnn.enabled == True
-
-    # args.channels2 = args.channels2 if args.channels2[0] else args.channels
-    # args.pool2 = args.pool2 or args.pool
-    # args.stride2 = args.stride2 or args.stride
-    # args.kernel2 = args.kernel2 or args.kernel[0]
 
     if args.channels[0] != 0:
         down_factor = int((args.stride * args.pool) ** len(args.channels))
     else:
         down_factor = 1
 
-    length, enc_length = args.length, args.length
+    down_factor = (model_para.encoder_stride * model_para.encoder_pooling) ** len(model_para.encoder_channels)
+
+    length, enc_length = args.length, args.length / down_factor
     # args.kernel2, length = utils.test_parameters(
     #     length, args.kernel2, args.channels2, args.stride2, args.pool2, args.no_pad,part=1)
 

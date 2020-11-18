@@ -27,7 +27,7 @@ class FilDataset(data_utils.Dataset):
         #  load csv file containing noise files
         # self.noise_df = pd.read_csv('/home/lkuenkel/neural_nets/pulsar_net_noise/datasets/palfa_test_minus88.csv')
         self.noise_df = df_noise
-        self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 0]
+        #self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 2]
         self.noise = (0.3, 2)
         self.enc_shape = enc_shape
         self.down_factor = down_factor
@@ -51,6 +51,7 @@ class FilDataset(data_utils.Dataset):
             self.dm_ranges[1,-1] = 10000
         else:
             self.dm_ranges = None
+        print('DM Ranges:')
         print(self.dm_ranges)
 
         if 'MaskName' in self.df.columns:
@@ -87,17 +88,18 @@ class FilDataset(data_utils.Dataset):
                 1], down_factor=self.down_factor,
             dm=labels[1], shift=self.shift, test_samples=self.test_samples, name=name, nulling=self.nulling,
             dmsplit=self.dmsplit, dm_indexes=dm_indexes, net_out=self.net_out)
+        # print(noisy_data.shape, orig_data.shape)
         return noisy_data, orig_data, labels
 
     def __len__(self):
         return len(self.df)
 
 
-def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(0, 0), edge=[0,0], start_val=2000, test=False,
+def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(1, 1, 1), edge=[0,0], start_val=2000, test=False,
                     labels=0, enc_length=1875, down_factor=1, dm=0, shift=False, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
                     dmsplit=False, dm_indexes=0, net_out=1):
         # Load filterbank from disk with sigpyproc
-    # print(file, noise)
+    # print(file, noise, down_factor)
     if not test:
         if not pd.isna(file):
             current_file = reader(file)
@@ -116,7 +118,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                         np.abs(np.random.normal(nulling[1], nulling[2])))
                     null_start = int(np.random.randint(data_array.shape[1]))
                     data_array[:, null_start:null_start + null_length] = 0
-        if not pd.isna(noise) and noise_val != 0 and not 'J' in name:
+        if not pd.isna(noise) and noise_val != 0:
             current_noise_file = reader(noise)
             start_noise, nsamps = choose_start(
                 mode, current_noise_file, length, start_val, down_factor=down_factor)
@@ -131,8 +133,8 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                     noise_val_used = np.random.uniform(noise_val[0], np.min(
                         (noise_val[1], noise_val[0] + noise_val[2] * 2)))
                     # noise_val = np.random.triangular(noise_val[0], noise_val[0], noise_val[1])
-                    added_val = np.random.randint(
-                        -noise_val[4], noise_val[4] + 1)
+                    # added_val = np.random.randint(
+                    #     -noise_val[4], noise_val[4] + 1)
                     # added_val = np.random.uniform(-noise_val[4], noise_val[4])
                 else:
                     noise_val_used = noise_val[0]
@@ -141,18 +143,20 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                     data_array = orig_array
                 else:
                     data_array = orig_array / noise_val_used + \
-                        np.asarray(current_noise) + added_val
+                        np.asarray(current_noise)# + added_val
                     # print(noise_val_used, current_noise)
-            if nulling[4]:
-                data_array = spec_augment(spec=data_array, num_mask=nulling[5], freq_masking=nulling[6],
-                                          time_masking=nulling[7], value=data_array.mean())
+            # if nulling[4]:
+            #     data_array = spec_augment(spec=data_array, num_mask=nulling[5], freq_masking=nulling[6],
+            #                               time_masking=nulling[7], value=data_array.mean())
                 # plt.imshow(data_array,aspect='auto')
                 # plt.show()
         enc_down = int(length / down_factor)
         if target_file != '' and not pd.isna(file):
             current_target = np.load(target_file)
+            # print(current_target.shape, down_factor)
             start_down = int(start / down_factor)
             if shift:
+                # shift shifts the target output according to the DM, still needs to work with data from different bandwidths
                 dm_shift = int(4.15 * 10**6 * (1396**-2 -
                                                1443**-2) * dm / (0.64 * down_factor))
                 start_down -= dm_shift

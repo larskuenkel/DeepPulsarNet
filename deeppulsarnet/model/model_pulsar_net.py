@@ -8,17 +8,9 @@ from model.model_tcn_multi import TemporalConvNet_multi
 from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
 from model.model_classifier import classifier
-#from model.model_regressor_rnn import regressor_rnn
-#from model.model_regressor_tcn import regressor_tcn
-#from model.model_regressor_acf import regressor_acf
-# from model.model_regressor_fft import regressor_fft
 from model.model_regressor_ffa import regressor_ffa
-# from model.model_regressor_fft_new import regressor_fft_new
-# from model.model_regressor_stft import regressor_stft
 from model.model_regressor_stft import regressor_stft_conv
 from model.model_regressor_stft import regressor_stft_comb
-# from model.model_regressor_stft import regressor_stft_multi
-# from model.model_regressor_simple import regressor_simple
 from model.model_classifier_filter import classifier_filter
 from torch.utils.checkpoint import checkpoint
 import numpy as np
@@ -59,8 +51,8 @@ class pulsar_net(nn.Module):
             self.dec_channels = dec_channels
         else:
             self.dec_channels = list_channels_conv[::-1]
-        self.stride = stride
-        self.pool = pool
+        self.stride = model_para.encoder_stride
+        self.pool = model_para.encoder_pooling
 
         self.kernel_encoder = kernel_size[0]
         self.kernel_decoder = kernel_size[-1]
@@ -68,8 +60,7 @@ class pulsar_net(nn.Module):
         self.no_pad = no_pad
         self.binary = binary
         self.tcn_class = tcn_class
-        self.down_fac = self.stride * \
-            self.pool ** len(model_para.encoder_channels)
+        self.down_fac = (self.stride * self.pool) ** len(model_para.encoder_channels)
 
         self.int_chan = self.input_shape[0] + add_chan
         self.input_shape_2 = (self.int_chan, self.input_shape[1])

@@ -14,10 +14,10 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     else:
         df = df_val_test
 
-    df_noise = load_csv(csv_noise, 0)
+    df_noise = load_csv(csv_noise, 0, noise_set=True)
 
-    df_noise_noise = df_noise[df_noise['Label'] == 0]
-    df_noise_psr = df_noise[df_noise['Label'] == 1]
+    df_noise_noise = df_noise[df_noise['Label'] == 2]
+    df_noise_psr = df_noise[df_noise['Label'] == 3]
 
     example_shape = load_example(df, length, edge)
     if mean_period and mean_dm:
@@ -48,17 +48,18 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
 
     print(csv_file)
     train_indices, valid_indices = create_indices(len(df), val_frac, kfold=kfold)
-    train_noise_indices, valid_noise_indices = create_indices(len(df_noise_noise), val_frac, kfold=kfold)
+    train_noise_indices, valid_noise_indices = create_indices(len(df_noise), val_frac, kfold=kfold)
+
     if val_frac!=1:
         train_dataset = dataset.FilDataset(
-        df.iloc[train_indices], df_noise_noise.iloc[train_noise_indices], example_shape[0], length, 1, edge, enc_shape, 
+        df.iloc[train_indices], df_noise.iloc[train_noise_indices], example_shape[0], length, 1, edge, enc_shape, 
         down_factor=down_factor, shift=shift, nulling=nulling, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap)
         train_loader = data_utils.DataLoader(train_dataset, shuffle=True,
                                              batch_size=batch, num_workers=2, drop_last=True)
     else:
         train_loader = None
     valid_dataset = dataset.FilDataset(
-        df.iloc[valid_indices], df_noise_noise.iloc[valid_noise_indices], example_shape[0], length, 0, edge, enc_shape, down_factor=down_factor, test=test, shift=shift,
+        df.iloc[valid_indices], df_noise.iloc[valid_noise_indices], example_shape[0], length, 0, edge, enc_shape, down_factor=down_factor, test=test, shift=shift,
         test_samples=test_samples, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap)
     if test:
         shuffle_valid = False
@@ -68,14 +69,16 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
         valid_dataset, batch_size=batch, num_workers=1, shuffle=shuffle_valid, drop_last=False)
 
     if val_test:
-        print(f"Val/Test Noise: {len(valid_noise_indices)}, Test PSR: {len(df_noise_psr)}")
-        df_for_test = pd.concat([df_noise_noise.iloc[valid_noise_indices], df_noise_psr], axis=0)
+        # print(f"Val/Test Noise: {len(valid_noise_indices)}, Test PSR: {len(df_noise_psr)}")
+        # df_for_test = pd.concat([df_noise.iloc[valid_noise_indices], df_noise_psr], axis=0)
+        print(f"Test PSR: {len(df_noise_psr)}")
+        df_for_test = df_noise_psr
     else:
         df_for_test = None
     return train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test
 
 
-def load_csv(csv_file, samples, snr_range=[0,0], dm_range=[0,2000]):
+def load_csv(csv_file, samples, snr_range=[0,0], dm_range=[0,2000], noise_set=False):
         # Load csv and truncate to given number of samples
     if csv_file is not None:
         data_frame = pd.read_csv('./datasets/{}'.format(csv_file), comment='#')
@@ -85,7 +88,7 @@ def load_csv(csv_file, samples, snr_range=[0,0], dm_range=[0,2000]):
                                 (data_frame['P0'].isnull())]
 
         if snr_range[0] or snr_range[1]:
-            if 'SNR' in data_frame:
+            if 'SNR' in data_frame and noise_set:
                 data_frame = data_frame[data_frame['SNR'] > -snr_range[0]]
                 data_frame = data_frame.loc[((snr_range[1] < data_frame['SNR'])&(data_frame['SNR']<snr_range[2]))
                 |(data_frame['SNR']<0)]
