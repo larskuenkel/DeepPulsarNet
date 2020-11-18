@@ -27,7 +27,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Grab parameters.')
     parser.add_argument('-l', type=float, nargs='+',
-                        default=[0.2, 2, 0.2, 1], help='Learn rate. [lr before first noise update, \
+                        default=[1e-3, 5e-4, 1], help='Learn rate. [lr before first noise update, \
                         lr after first noise update, factor bewtween first part and second part of network].')
     parser.add_argument('-e', type=int, default=50, help='Epochs')
     parser.add_argument(
@@ -36,7 +36,7 @@ def main():
                         help='Plot using visdom.')
     parser.add_argument('--samples', type=int, default=0,
                         help='Number of samples. Default: All')
-    parser.add_argument('-c', action='store_true', help='Use lr scheduler.')
+    parser.add_argument('-c', action='store_false', help='Disable lr scheduler.')
     parser.add_argument('--length', type=int,
                         default=60000, help='Length of data.')
     parser.add_argument('--kernel', type=int,
@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--name', type=str, default='',
                         help='Name of the saved weights and model.')
     parser.add_argument('--noise', type=float, nargs='+',
-                        default=[0.01, 10, 1, 0], help='Define how much noise is added. [start_value, step_size, max, use noise from loaded model]')
+                        default=[0.01, 20, 2, 0], help='Define how much noise is added. [start_value, step_size, max, use noise from loaded model]')
     parser.add_argument('--linear', type=int, nargs='+',
                         default=[128, 32], help='Define the hidden layers in the regressor')
     parser.add_argument('--stride', type=int, default=2,
@@ -74,8 +74,9 @@ def main():
                         help='Loops while training on one batch')
     parser.add_argument('--bandpass', action='store_true',
                         help='Use bandpass.npy to make the signal more realistic.')
-    parser.add_argument('--threshold', type=float, default=[0.004, 0, 0], nargs=3,
-                        help='Increase the noise when loss drops below this value.')
+    parser.add_argument('--threshold', type=float, default=[0.1, 0, 2], nargs=3,
+                        help='Increase the noise when loss drops below this value.\
+                        [Value, added value with noise, which metric]')
     parser.add_argument('--binary', type=float, default=0.7,
                         help='Use binary output with chosen threshold. Also uses nn.BCEWithLogitsLoss() as loss.')
     parser.add_argument('--mode', type=str, default='full',
@@ -124,8 +125,8 @@ def main():
                         default=[20, 5, 2], help='Dilation in the tcn. [Start, add per layer, dilation of ini layers].')
     parser.add_argument('--add_chan', type=int,
                         default=0, help='Additional channels in the recovered state.')
-    parser.add_argument('--no_reg', action='store_true',
-                        help='Only use classification loss, not the regression loss.')
+    parser.add_argument('--no_reg', action='store_false',
+                        help='Do not only use classification loss, also use regression loss. currently broken.')
     parser.add_argument('--tcn_class', type=int, nargs='+',
                         default=[6, 5, 4, 1000, 30, 20], help='Use a tcn classifier. Para: [layers, kernel, channels, pool, [layers in lin]]')
     parser.add_argument('--acf_class', type=int, nargs='+',
@@ -149,8 +150,8 @@ def main():
                         default=[0, 0, 0], help='Range of SNR. First number gives the number of noise samples')
     parser.add_argument('--dm_range', type=float, nargs=2,
                         default=[0, 2000], help='Range of DM.')
-    parser.add_argument('--norm', action='store_true',
-                        help='Normalise input dynamically with group norm.')
+    parser.add_argument('--norm', action='store_false',
+                        help='DO not normalise input dynamically with group norm.')
     parser.add_argument('--block_mode', type=str, default='cat',
                         help='Choose Mode for the combination of the block. add, cat, pool')
     parser.add_argument('--reduce_mode', type=str, default='mlp',
@@ -160,7 +161,7 @@ def main():
     parser.add_argument('--filter_size', type=int, nargs=2,
                         default=[0, 0], help='Choose size and Dilation of the mean filter for the input.')
     parser.add_argument('--clamp', type=int, nargs=3,
-                        default=[65, -100, 100], help='Bias value and clamp range.')
+                        default=[0, 0, 10000], help='Bias value and clamp range.')
     parser.add_argument('--reset_pre', action='store_true',
                         help='Reset the preprocessing option when loading a model.')
     parser.add_argument('--dec_mode', type=str, default='ups',
@@ -234,7 +235,7 @@ def main():
                         help='Change parameters of the model. Usage: --model_parameter "tcn_1_layer 4, encoder_conv_groups 2".\
                         Separate multiple parameters with a comma and use the quotation marks.')
     parser.add_argument('--class_configs', type=str, default=['class_stft.json'], nargs='+',
-                        help='Name of the config files containing the hyperparameters of the classifiersin the model_configs folder.\
+                        help='Name of the config files containing the hyperparameters of the classifiers in the model_configs folder.\
                         --class_configs class_1.json class_2.json')
 
     args = parser.parse_args()
@@ -327,7 +328,7 @@ def main():
     #  Setup loggin, plotting and create data
     logging = logger.logger(args.p, args.name)
 
-    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test = data_loader.create_loader(
+    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
         args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
         snr_range=args.snr_range, shift=args.shift, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
         dmsplit=args.dmsplit, net_out=args.tcn_channels[2], dm_range=args.dm_range, dm_overlap=args.dmoverlap)
@@ -479,7 +480,7 @@ def main():
                          stft=args.stft, dm0=args.dm0_mode, cmask=args.cmask, rfimask=args.rfimask,
                          crop_augment=args.crop_augment, ffa=args.ffa,
                          ffa_args=args.ffa_args, dm0_class=args.dm0_class,
-                         class_configs=args.class_configs).to(device)
+                         class_configs=args.class_configs, data_resolution=data_resolution).to(device)
         net.edge = train_loader.dataset.edge
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1, ada=args.ada)

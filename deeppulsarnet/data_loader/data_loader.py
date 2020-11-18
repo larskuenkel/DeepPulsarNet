@@ -3,6 +3,7 @@ import data_loader.dataset as dataset
 import numpy as np
 import torch.utils.data as data_utils
 import sys
+from sigpyproc.Readers import FilReader as reader
 
 
 def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_period=0, mean_dm=0, mean_freq = 0, val_frac=0.2, test=False, enc_shape=(1,1000), down_factor=4,
@@ -19,7 +20,7 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     df_noise_noise = df_noise[df_noise['Label'] == 2]
     df_noise_psr = df_noise[df_noise['Label'] == 3]
 
-    example_shape = load_example(df, length, edge)
+    example_shape, data_resolution = load_example(df, length, edge)
     if mean_period and mean_dm:
         print("Using existing mean period and dm: {} {}".format(
             mean_period, mean_dm))
@@ -75,7 +76,7 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
         df_for_test = df_noise_psr
     else:
         df_for_test = None
-    return train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test
+    return train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution
 
 
 def load_csv(csv_file, samples, snr_range=[0,0], dm_range=[0,2000], noise_set=False):
@@ -147,5 +148,7 @@ def load_example(df, length, edge):
         file = df.iloc[i]['FileName']
         if not pd.isna(file):
             example_file = dataset.load_filterbank(file, length, 0, edge=edge)[0]
+            fil = reader(file)
+            data_resolution = float(fil.header['tsamp'])
             break
-    return example_file.shape
+    return example_file.shape, data_resolution

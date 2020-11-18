@@ -131,6 +131,7 @@ class trainer():
                 ten_y, output_image = self.crop_target_output(
                     self.crop, ten_y, output_image)
 
+
             loss, periods = self.calc_loss(output_image, ten_y,
                                            output_classifier, ten_y2, only_class, single_class=output_single_class)
             loss = loss / self.acc_grad
@@ -226,9 +227,9 @@ class trainer():
                     #                          ten_y2.detach().cpu().numpy().tolist())
                 try:
                     self.logger.classerr.add(
-                        output_classifier[:, :2].detach().cpu(), ten_y2[:, 2].detach().cpu())
+                        output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
                     self.logger.confusion_meter.add(
-                        output_classifier[:, :2].detach().cpu(), ten_y2[:, 2].detach().cpu())
+                        output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
                     # print(np.array2string(self.logger.confusion_meter.value().flatten(), precision=3))
                 except ValueError:
                     print('error with loss meter')
@@ -617,9 +618,10 @@ class trainer():
         # or (self.net.mode == 'full' and self.net.epoch != 0):
         if self.net.mode != 'autoencoder':
             output_clas_2 = output_clas[:, :2]
-            ten_y_2 = target_clas[:, 2].long()
+            ten_y_2 = torch.fmod(target_clas[:, 2],2).long()
 
             loss_2 = self.net.loss_2(output_clas_2, ten_y_2)
+            print(loss_2)
             loss_val_2 = loss_2.data.cpu().numpy()
             weight_2 = len(output_clas_2)
             self.logger.loss_meter_2.add(loss_val_2, weight_2)

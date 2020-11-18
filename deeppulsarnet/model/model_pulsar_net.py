@@ -9,7 +9,6 @@ from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
 from model.model_classifier import classifier
 from model.model_regressor_ffa import regressor_ffa
-from model.model_regressor_stft import regressor_stft_conv
 from model.model_regressor_stft import regressor_stft_comb
 from model.model_classifier_filter import classifier_filter
 from torch.utils.checkpoint import checkpoint
@@ -33,7 +32,7 @@ class pulsar_net(nn.Module):
                  filter_size=0, clamp=[65, -10, 10], dec_mode='conv', class_mode='simple', multi_class=False,
                  gauss=(27, 15 / 4, 1, 1), enc_mode='conv', pool_multi=4, aa=False, stft=[10000], dm0='none',
                  cmask=False, rfimask=False, crop_augment=0., ffa=[5, 2, 8, 10], ffa_args=[0.07, 1.1, 15, 80, 1],
-                 dm0_class=False, class_configs=['']):
+                 dm0_class=False, class_configs=[''], data_resolution=1):
         super().__init__()
 
         print('Creating neural net.')
@@ -60,7 +59,8 @@ class pulsar_net(nn.Module):
         self.no_pad = no_pad
         self.binary = binary
         self.tcn_class = tcn_class
-        self.down_fac = (self.stride * self.pool) ** len(model_para.encoder_channels)
+        self.down_fac = (
+            self.stride * self.pool) ** len(model_para.encoder_channels)
 
         self.int_chan = self.input_shape[0] + add_chan
         self.input_shape_2 = (self.int_chan, self.input_shape[1])
@@ -68,6 +68,9 @@ class pulsar_net(nn.Module):
         self.output_chan = model_para.output_channels
 
         self.out_length = self.input_shape[1] // self.down_fac - self.crop * 2
+
+        self.data_resolution = data_resolution
+        self.output_resolution = data_resolution * self.down_fac
 
         self.set_preprocess(self.input_shape, norm,
                             filter_size, bias=clamp[0], clamp=clamp[1:], dm0=model_para.subtract_dm0,
@@ -176,42 +179,25 @@ class pulsar_net(nn.Module):
                 class_para_dict = json.load(json_data_file)
             class_para = argparse.Namespace(**class_para_dict)
 
-            # if 'stft_conv' in self.class_mode:
-            if class_para.class_type == 'stft_conv':
-                if stft[0] == 0:
-                    ini_length = self.out_length
-                    height = 1
-                else:
-                    ini_length = stft[0]
-                    height = int(
-                        np.floor((self.out_length - stft[0]) / stft[6])) + 1
-                for block in range(int(stft[5])):
-                    factor = 2 ** block
-                    current_length = int(
-                        np.floor(ini_length / ((height - 1) * stft[6] + 1)))
-                    stft_para = [int(current_length), stft[1], int(
-                        stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-                    setattr(self, "classifier_stft_%d%s" % (block, added), regressor_stft_conv(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                                               norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]), height_pooling=int(stft[10]),
-                                                                                               input_length=self.out_length, dm0_class=dm0_class))
-                    self.classifiers.append(
-                        getattr(self, "classifier_stft_%d%s" % (block, added)))
-                    height += stft[11]
             # if 'ffa' in self.class_mode:
             if class_para.class_type == 'ffa':
-                setattr(self, "classifier_ffa%s" % added, regressor_ffa(ffa_class, input_chan=self.output_chan, input_length=self.out_length,
-                                                                        ffa_args=ffa_args, dm0_class=dm0_class))
-                self.classifiers.append(getattr(self, "classifier_ffa%s" % added))
+                setattr(self, "classifier_ffa%s" % added, regressor_ffa(self.output_resolution, no_reg=True, dm0_class=False,
+                                                                        pooling=class_para.pooling, nn_layers=class_para.nn_layers, channels=class_para.channels,
+                                                                        kernel=class_para.kernel, norm=class_para.norm, use_ampl=class_para.only_use_amplitude,
+                                                                        min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
+                                                                        bins_max=class_para.bins_max,
+                                                                        remove_threshold=class_para.remove_dynamic_threshold))
+                self.classifiers.append(
+                    getattr(self, "classifier_ffa%s" % added))
 
             # if 'stft_comb' in self.class_mode:
             if class_para.class_type == 'stft':
-                stft_para = [self.out_length, stft[1], int(
-                    stft[2]), int(stft[3]), int(stft[4]), stft[6]]
-                setattr(self, "classifier_stft_comb", regressor_stft_comb(stft_para, no_reg, dropout=dropout, input_chan=self.output_chan,
-                                                                          norm=int(stft[7]), crop_augment=crop_augment, harmonics=int(stft[8]), layer_number=int(stft[9]),
-                                                                          input_length=self.out_length, blocks=int(stft[5]), added_height=int(stft[11]),
-                                                                          dm0_class=dm0_class))
-                self.classifiers.append(getattr(self, "classifier_stft_comb"))
+                setattr(self, f"classifier_{class_para.name}", regressor_stft_comb(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
+                                                                                   harmonics=class_para.harmonics, nn_layers=class_para.nn_layers, stft_count=class_para.stft_count,
+                                                                                   dm0_class=dm0_class, crop_factor=class_para.crop_factor, channels=class_para.channels,
+                                                                                   kernel=class_para.kernel))
+                self.classifiers.append(
+                    getattr(self, f"classifier_{class_para.name}"))
         # else:
         #     self.classifier = None
 

@@ -10,7 +10,8 @@ from riptide import TimeSeries, ffa_search, peak_detection
 def sigma_fit(stats, polydeg=2):
     x = stats['logpmid']
     y = stats['sigma']
-    poly = np.poly1d( np.polyfit(x, y, polydeg) )
+    poly = np.poly1d(np.polyfit(x, y, polydeg))
+
     def func(period):
         return poly(np.log(period))
     return func, poly.coefficients
@@ -19,7 +20,8 @@ def sigma_fit(stats, polydeg=2):
 def median_fit(stats, polydeg=2):
     x = stats['logpmid']
     y = stats['median']
-    poly = np.poly1d( np.polyfit(x, y, polydeg) )
+    poly = np.poly1d(np.polyfit(x, y, polydeg))
+
     def func(period):
         return poly(np.log(period))
     return func, poly.coefficients
@@ -106,30 +108,39 @@ class Height_conv(nn.Module):
 
 
 class regressor_ffa(nn.Module):
-    def __init__(self, ffa_para, input_chan=1, no_reg=True, input_length=90000, ffa_args=[0.07, 1.1, 15, 80, 1], dm0_class=False):
+    def __init__(self, input_resolution, no_reg=True, dm0_class=False,
+        pooling=1, nn_layers=2, channels=8, kernel=11, norm=True, use_ampl=False, pytorch_ffa=False,
+        min_period=0.09, max_period=1.1, bins_min=20, bins_max=25, remove_threshold=True):
         super().__init__()
         self.no_reg = no_reg
         if self.no_reg:
             self.final_output = 2
         else:
             self.final_output = 4
-        self.pool_size = ffa_para[0]
-        self.num_layers = ffa_para[1]
-        self.channels = ffa_para[2]
-        self.kernel = ffa_para[3]
-        self.norm = ffa_para[4]
-        self.use_ampl = ffa_para[5]
-        self.use_pytorch = ffa_para[6]
-        self.ffa_args = ffa_args
+
+        self.input_resolution = input_resolution
+        self.pool_size = pooling
+        self.nn_layers = nn_layers
+        self.channels = channels
+        self.kernel = kernel
+        self.norm = norm
+        self.use_ampl = use_ampl
+        self.use_pytorch = pytorch_ffa
         self.dm0_class = dm0_class
+        self.min_period = max(min_period, bins_min*input_resolution)
+        self.max_period = max_period
+        self.bins_min = bins_min
+        self.bins_max = bins_max
+        self.remove_threshold = remove_threshold
 
         if self.use_pytorch:
+            # curently broken due to different riptide structure
             dummy_array = np.zeros(input_length)
-            tseries = TimeSeries.from_numpy_array(dummy_array,0.00064*4)
-            ts, plan, pgram = ffa_search(tseries,period_min=0.07,period_max=1.1,bins_min=10, bins_max=12)
+            tseries = TimeSeries.from_numpy_array(
+                dummy_array, input_resolution)
+            ts, plan, pgram = ffa_search(tseries, period_min=self.min_period,
+                                         period_max=self.max_period, bins_min=self.bins_min, bins_max=self.bins_max)
             self.ffa_module = pytorch_ffa(plan)
-        self.input_chan = input_chan
-
 
         # if input_length == 0:
         #     self.height = 2
@@ -145,10 +156,7 @@ class regressor_ffa(nn.Module):
             if self.pool_size:
                 self.pool = nn.MaxPool3d((1, self.pool_size, 1))
             current_out += self.channels
-            if self.ffa_args[4] == 4:
-                ini_channels = 3
-            else:
-                ini_channels = 1
+            ini_channels = 1
             layers += [
                 nn.Conv3d(ini_channels, current_out, (self.height, self.kernel, 1), stride=(
                     1, 1, 1), padding=(0, self.kernel // 2, 0)),
@@ -156,7 +164,7 @@ class regressor_ffa(nn.Module):
                 # nn.Conv3d(current_out, 1, (1, 1, 1), stride=(1,1,1)),
                 # Squeeze_Layer(),
             ]
-            for i in range(self.num_layers - 1):
+            for i in range(self.nn_layers - 1):
                 current_in = current_out
                 current_out += self.channels
                 dilation = 2 ** (i + 1)
@@ -182,29 +190,20 @@ class regressor_ffa(nn.Module):
         self.ini_final()
 
     def forward(self, x):
-        if not hasattr(self, 'use_pytorch'):
-            ffa_tensor = calc_ffa(x)
+        if self.use_pytorch:
+            periods, ffa_tensor = self.ffa_module(x)
+            ffa_tensor = ffa_tensor.permute(0, 2, 1).unsqueeze(1).unsqueeze(1)
         else:
-            if self.use_pytorch:
-                periods, ffa_tensor = self.ffa_module(x)
-                ffa_tensor = ffa_tensor.permute(0,2,1).unsqueeze(1).unsqueeze(1)
-            else:
-                if not hasattr(self, 'ffa_args'):
-                    ffa_tensor, ffa_periods = calc_ffa(x)
-                else:
-                    if not self.ffa_args[0] == -1:
-                        ffa_tensor, ffa_periods = calc_ffa(x, bin_min=int(self.ffa_args[2]), bin_max=int(self.ffa_args[3]),
-                            min_period=self.ffa_args[0], max_period=self.ffa_args[1], renorm= False)#int(self.ffa_args[4]))
-                    else:
-                        ffa_tensor, ffa_periods = calc_ffa_piecewise(x, renorm=self.ffa_args[4])
-            if getattr(self, 'ffa_args', [0,0,0,0,0])[4]==1:
-                ffa_tensor = renorm_ffa_gpu(ffa_tensor)
+            ffa_tensor, ffa_periods = calc_ffa(x, self.input_resolution, bins_min=self.bins_min, bins_max=self.bins_max,
+                        min_period=self.min_period, max_period=self.max_period, remove_threshold=self.remove_threshold)
+        if self.norm:
+            ffa_tensor = renorm_ffa_gpu(ffa_tensor)
         if not self.use_ampl:
             if self.pool_size:
                 ffa_tensor = self.pool(ffa_tensor)
-            out_conv = self.conv(ffa_tensor)
-        else:
-            out_conv = ffa_tensor
+                out_conv = self.conv(ffa_tensor)
+            else:
+                out_conv = ffa_tensor
 
         if getattr(self, 'dm0_class', 0):
             out_conv = out_conv[:,:,:,:,:-1] - out_conv[:,:,:,:,-1][:,:,:,:,None]
@@ -268,53 +267,27 @@ class regressor_ffa(nn.Module):
                 f'Pretraining ffa classifier failed even after after {steps} steps')
 
 
-def calc_ffa(tensor, bin_min=10, bin_max=12, renorm=True, min_period=0.07, max_period=1.1):
+def calc_ffa(tensor, resolution, bins_min=10, bins_max=12, min_period=0.07, max_period=1.1, remove_threshold=True):
     cpu_tensor = tensor.detach().cpu().numpy()
     ini_shape = cpu_tensor.shape
     switch = 0
     for i in range(ini_shape[0]):
         for j in range(ini_shape[1]):
             # for k in range(ini_shape[2]):
-            tseries = TimeSeries.from_numpy_array(cpu_tensor[i,j,:], 0.00064 * 4)
+            tseries = TimeSeries.from_numpy_array(cpu_tensor[i,j,:], resolution)
             ts, pgram = ffa_search(
-                tseries, period_min=min_period, period_max=max_period, bins_min=bin_min, bins_max=bin_max)
-            snr = pgram.snrs.max(axis=1)
-            if renorm:
-                snr = renorm_ffa(snr)
+                tseries, period_min=min_period, period_max=max_period, bins_min=bins_min, bins_max=bins_max)
+            if remove_threshold:
+                snr = dethresh_pgram(pgram)
+            else:
+                snr = pgram.snrs.max(axis=1)
             if not switch:
                 new_tensor = np.zeros((ini_shape[0], 1, 1, len(snr), ini_shape[1]))
                 switch = 1
             new_tensor[i,0,0,:,j] = snr
-    gpu_tensor = torch.Tensor(new_tensor).cuda()
+    gpu_tensor = torch.Tensor(new_tensor).to(tensor.device)
     return gpu_tensor, pgram.periods
 
-
-def detrend_pgram(pgram):
-    boundaries = peak_detection.segment(pgram.periods, pgram.tobs)
-    snr = pgram.snrs.max(axis=1)
-    stats = peak_detection.segment_stats(snr, boundaries)
-    tfunc_m, polyco_m = median_fit(stats, polydeg=2)
-    medians = tfunc_m(pgram.periods)
-    tfunc_s, polyco_s = sigma_fit(stats, polydeg=2)
-    sigmas = tfunc_s(pgram.periods)
-    snrs = (snr - medians) / sigmas
-    return snrs
-
-
-def dethresh_pgram_old(pgram, snr_min=6.5, nsigma=6.5, polydeg=2, cat=False):
-    boundaries = peak_detection.segment(pgram.periods, pgram.tobs)
-    snr = pgram.snrs.max(axis=1)
-    stats = peak_detection.segment_stats(snr, boundaries)
-    tfunc_m, polyco_m = median_fit(stats, polydeg=polydeg)
-    medians = tfunc_m(pgram.periods)
-    tfunc_s, polyco_s = sigma_fit(stats, polydeg=polydeg)
-    sigmas = tfunc_s(pgram.periods)
-    if cat==False:
-        threshold = np.maximum(medians+ nsigma*sigmas, snr_min)
-        snrs = snr - threshold
-    else:
-        snrs = np.stack((snr, medians, sigmas), axis=0)
-    return snrs
 
 def dethresh_pgram(pgram, snr_min=6.5, n_sigma=6.5, polydeg=2):
     snr = pgram.snrs.max(axis=1)
@@ -336,9 +309,9 @@ def calc_ffa_piecewise(tensor, renorm=0):
             # for k in range(ini_shape[2]):
             tseries = TimeSeries.from_numpy_array(cpu_tensor[i,j,:], 0.00064 * 4)
             ts, pgram1 = ffa_search(tseries,period_min=0.03,period_max=0.12,bins_min=10, bins_max=14)
-            #print(plan)
+            # print(plan)
             ts, pgram2 = ffa_search(tseries,period_min=0.12,period_max=0.48,bins_min=40, bins_max=44)
-            #print(plan)
+            # print(plan)
             ts, pgram3 = ffa_search(tseries,period_min=0.48,period_max=1.1,bins_min=160, bins_max=176)
             periods_combined = np.concatenate((pgram1.periods, pgram2.periods, pgram3.periods))
             if renorm==2:
@@ -391,7 +364,10 @@ def renorm_ffa(snr, parts=20):
 def renorm_ffa_gpu(ffa_tensor, parts=10):
     length_seg = (ffa_tensor.shape[3] // parts)
     trunc = ffa_tensor.shape[3] % length_seg
-    ffa_trunc = ffa_tensor[:,:,:,:-trunc,:]
+    if trunc:
+        ffa_trunc = ffa_tensor[:,:,:,:-trunc,:]
+    else:
+        ffa_trunc = ffa_tensor
     reshaped = ffa_trunc.view(ffa_tensor.shape[0],ffa_tensor.shape[1],ffa_tensor.shape[2],parts,length_seg,ffa_tensor.shape[4])
     std = reshaped.std(4, keepdim=True)
     mean = reshaped.mean(4, keepdim=True)

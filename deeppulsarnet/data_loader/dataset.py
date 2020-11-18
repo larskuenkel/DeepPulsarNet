@@ -200,7 +200,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
     else:
         current_file = reader(file)
         samples = test_samples
-        current_data = current_file.readBlock(0, 1000000000)#.T
+        current_data = current_file.readBlock(0, int(current_file.header['nsamples']))#.T
         file_length = current_data.shape[1]
         actual_length = min(file_length, length)
         data_array = np.zeros((samples, current_data.shape[0], actual_length))

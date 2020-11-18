@@ -116,9 +116,9 @@ class logger():
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string += ' ' + mcc_string + ''
         if loss_test is None:
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f} {:.6f}||{:.6f} {:.6f} {:.6f}| {} Time: {:.2f}'.format(
-                epoch, lr, loss_train, loss_valid, reg_loss_train, 
-                                  clas_loss_train, im_loss_train, reg_loss, clas_loss, im_loss, conf_string, self.time_meter.value()))
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| {} Time: {:.2f}'.format(
+                epoch, lr, loss_train, loss_valid,
+                                  clas_loss_train, im_loss_train, clas_loss, im_loss, conf_string, self.time_meter.value()))
             # self.last_val_mcc = 0
         else:
             if np.count_nonzero(self.confusion_meter.value()) != 0:
@@ -133,15 +133,15 @@ class logger():
                         self.conf_val[1] = float(mcc)
                 # conf_string += ' ' + \
                 #     np.array2string(conf_val, precision=2, floatmode='fixed')
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f} {:.6f}||{:.6f} {:.6f} {:.6f}| Test: {:.5f} {} [{}] Time: {:.2f}'.format(
-                epoch, lr, loss_train, loss_valid, reg_loss_train, 
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} [{}] Time: {:.2f}'.format(
+                epoch, lr, loss_train, loss_valid, 
                                   clas_loss_train, im_loss_train,
-                                  reg_loss, clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
+                                  clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
         self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc])
         #print(np.nansum((reg_loss, clas_loss)))
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
-            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.6f} {:.5f} {} {} {}".format(
-                epoch, noise[0], loss_train, loss_valid, reg_loss, clas_loss, im_loss, loss_test, conf_string, mat_string))
+            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.5f} {} {} {}".format(
+                epoch, noise[0], loss_train, loss_valid, clas_loss, im_loss, loss_test, conf_string, mat_string))
 
     def log_command(self, command):
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
