@@ -211,7 +211,7 @@ class regressor_ffa(nn.Module):
         max_pos = max_pos[:, 0, 0, 0, 0]
         max_pos_period = max_pos // out_conv.shape[4] % out_conv.shape[3]
         max_pos_chan = max_pos % out_conv.shape[4]
-        ffa_periods = torch.Tensor(ffa_periods).cuda()
+        ffa_periods = torch.Tensor(ffa_periods).to(x.device)
         if self.pool_size:
             position_factor = self.pool_size
         else:
@@ -342,7 +342,7 @@ def calc_ffa_piecewise(tensor, renorm=0):
                     new_tensor = np.zeros((ini_shape[0], 3, 1, snr.shape[1], ini_shape[1]))
                     switch = 1
                 new_tensor[i,:,0,:,j] = snr
-    gpu_tensor = torch.Tensor(new_tensor).cuda()
+    gpu_tensor = torch.Tensor(new_tensor).to(tensor.device)
     return gpu_tensor, periods_combined
 
 

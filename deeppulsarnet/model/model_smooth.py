@@ -32,7 +32,7 @@ class smooth(nn.Module):
         out /= max_vals[:, None, None]
         if self.threshold:
             out = torch.where(out > self.threshold, torch.ones(
-                1).cuda(), torch.zeros(1).cuda())
+                1).to(x.device), torch.zeros(1).to(x.device))
 
         return out.detach()
 

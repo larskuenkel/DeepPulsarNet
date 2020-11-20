@@ -30,21 +30,6 @@ class Preprocess(nn.Module):
         if self.use_norm:
             self.norm = nn.GroupNorm(groups, self.input_chan)
 
-        # if filter_size[0]:
-        #     if filter_size[1] == 1:
-        #         self.use_filter = 1
-        #         self.pre_pool = nn.AvgPool2d((self.input_shape[0], filter_size[0]), (1, 1), padding=(
-        #             0, (filter_size[0] - 1) // 2), count_include_pad=False)
-        #     elif self.filter_size[1] > 1:
-        #         self.use_filter = 2
-        #         self.kernel = torch.ones(
-        #             1, 1, self.input_shape[0], filter_size[0]).cuda()
-        #         self.kernel /= self.input_shape[0] * filter_size[0]
-        #         self.pool_pad = (filter_size[0] - 1) // 2 * filter_size[1]
-        #         self.pad = nn.ReflectionPad1d(self.pool_pad)
-
-        # else:
-        #     self.use_filter = 0
 
     def forward(self, x):
         # Input is expected to be of shape (batch_size, channel_in, time_steps)
@@ -77,15 +62,6 @@ class Preprocess(nn.Module):
                 y = y.view(y.shape[0],y.shape[1],self.rfi_layer.chunk_size, -1) * rfi_mask[:, :, None,:]
                 y = y.view(x.shape)
 
-        # if self.use_filter == 1:
-        #     means = self.pre_pool(y.unsqueeze(1))
-        #     output = y - means[:, 0, :, :]
-        # elif self.use_filter == 2:
-        #     y_pad = self.pad(y)
-        #     means = F.conv2d(y_pad.unsqueeze(1), self.kernel, stride=1, bias=None, dilation=(
-        #         1, self.filter_size[1]), padding=0)
-        #     output = y - means[:, 0, :, :]
-        # else:
         output = y
         return output
 

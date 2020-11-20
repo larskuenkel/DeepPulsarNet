@@ -283,7 +283,7 @@ class regressor_stft_comb(nn.Module):
 
         #output_freq = 1 / (max_pos_freq * self.fft_res / (2 ** max_pos_harm) + 0.00001)
         #output_freq = output_freq.clamp(0, 5)
-        output_freq = torch.ones((x.shape[0], 1)).cuda()
+        output_freq = torch.ones((x.shape[0], 1)).to(x.device)
         output = torch.cat((output, output_freq), dim=1)
         # print(output_freq)
         return output

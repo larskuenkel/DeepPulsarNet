@@ -5,7 +5,6 @@
 import torch
 import numpy as np
 import argparse
-import utils
 # from torchsummary import summary
 import sys
 import torch.nn as nn
@@ -21,9 +20,13 @@ import json
 def main():
     # Parameters
 
-    cuda = 1  # use cuda (1) or not (0)
+    # cuda = 1  # use cuda (1) or not (0)
     # torch.backends.cudnn.benchmark=True
     print(f"Cuda available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        cuda = 1
+    else:
+        cuda = 0
 
     parser = argparse.ArgumentParser(description='Grab parameters.')
     parser.add_argument('-l', type=float, nargs='+',
@@ -36,7 +39,8 @@ def main():
                         help='Plot using visdom.')
     parser.add_argument('--samples', type=int, default=0,
                         help='Number of samples. Default: All')
-    parser.add_argument('-c', action='store_false', help='Disable lr scheduler.')
+    parser.add_argument('-c', action='store_false',
+                        help='Disable lr scheduler.')
     parser.add_argument('--length', type=int,
                         default=60000, help='Length of data.')
     parser.add_argument('--kernel', type=int,
@@ -53,7 +57,7 @@ def main():
                         default=0, help='Weight decay. Default: 0')
     parser.add_argument('--groups', type=int, default=[2, 1, 1, 1], nargs='+',
                         help='Channels per group in the group norm.')
-    parser.add_argument('--path', type=str, 
+    parser.add_argument('--path', type=str,
                         help='Set the path of the data csv.')
     parser.add_argument('--path_noise', type=str,
                         help='Set the path of the noise csv.')
@@ -207,7 +211,7 @@ def main():
     parser.add_argument('--rfimask', action='store_true',
                         help='Use rfi masking.')
     parser.add_argument('--net_chunks', type=int, nargs=2,
-                        default=[1,0], help='Calculate tcn in chunks to save memory. [Chunks, overlap]')
+                        default=[1, 0], help='Calculate tcn in chunks to save memory. [Chunks, overlap]')
     parser.add_argument('--crop_augment', type=float, default=0.0,
                         help='Change cropping in stft by set value.')
     parser.add_argument('--kfold', type=int, default=-1,
@@ -268,7 +272,8 @@ def main():
             split_para = changed_parameter.split()
             para_name = split_para[0].lstrip()
             if not hasattr(model_para, para_name):
-                print(f"Parameter {para_name} does not yet exist in model config.")
+                print(
+                    f"Parameter {para_name} does not yet exist in model config.")
                 setattr(model_para, para_name, split_para[1:])
             else:
                 old_type = type(getattr(model_para, para_name))
@@ -283,8 +288,9 @@ def main():
                 elif old_type is bool:
                     setattr(model_para, para_name, split_para[1:])
                 else:
-                    print(f"Parameter type not implemented yet for {changed_parameter}")
-            #print(model_para[para_name])
+                    print(
+                        f"Parameter type not implemented yet for {changed_parameter}")
+            # print(model_para[para_name])
             #model_para[para_name] = split_para[1:]
 
     torch.set_num_threads(4)
@@ -297,27 +303,16 @@ def main():
     else:
         down_factor = 1
 
-    down_factor = (model_para.encoder_stride * model_para.encoder_pooling) ** len(model_para.encoder_channels)
+    down_factor = (model_para.encoder_stride *
+                   model_para.encoder_pooling) ** len(model_para.encoder_channels)
 
     length, enc_length = args.length, args.length / down_factor
-    # args.kernel2, length = utils.test_parameters(
-    #     length, args.kernel2, args.channels2, args.stride2, args.pool2, args.no_pad,part=1)
 
     enc_shape = (args.tcn_channels[-1], enc_length)
-    # if len(args.kernel) > 1:
-    #     args.kernel[-1], length = utils.test_parameters(
-    #         length, args.kernel[1], args.channels, args.stride, args.pool, args.no_pad, part=2)
-
-    # if args.tcn_layers:
-    #     tcn_range = utils.calc_tcn_depth(args.tcn_kernel, args.tcn_layers)
 
     if args.pool != 1 and args.no_pad:
         print('No_pad and pool != 1 are incompatible.')
         sys.exit()
-
-    # if args.kernel[0] != args.kernel[-1] and args.no_pad:
-    #     print(' The option no_pad and two different kernel sizes are incompatible.')
-    #     sys.exit()
 
     np.random.seed(2)
     torch.manual_seed(1)  # reproducible
@@ -358,41 +353,23 @@ def main():
     print('Train samples: {}'.format(len(train_loader.dataset)))
 
     if args.model:
-        if args.untie_weights:
-            net_ini = torch.load('./trained_models/{}'.format(args.model))
-            net = utils.untie_weights(net_ini).to(device)
-            del(net_ini)
-        else:
-            net = torch.load(
-                './trained_models/{}'.format(args.model)).to(device)
+        net = torch.load(
+            './trained_models/{}'.format(args.model)).to(device)
         net.set_mode(args.mode)
         example_shape = net.input_shape
         example_shape_altered = example_shape
-        # if args.overwrite_rnn:
-        #     n_inputs = net.encoder_channels[-1]
-        #     n_hidden = args.rnn[0]
-        #     n_outputs = 4
-        #     layers = args.rnn[1]
-        #     bidirectional = args.bidirectional
-        #     net.classifier = regressor_rnn(
-        #         n_inputs, n_hidden, n_outputs, layers, bidirectional, drnn=args.rnn[2]).to(device)
 
-        #     # torch.save(net, "./trained_models/{}.pt".format(args.name))
-        #     # net = torch.load("./trained_models/{}.pt".format(args.name)).to(device)
         if args.overwrite_length:
             new_length = args.length
-            # kernel, new_length, enc_length = utils.test_parameters(
-            #     args.length, net.kernel_encoder, net.encoder_channels, net.stride, net.pool, args.no_pad, part=1)
             net.input_shape = (net.input_shape[0], new_length)
-            # new_enc_shape = (args.tcn_channels[-1], enc_length)
-            # train_loader.dataset.enc_shape = new_enc_shape
-            # valid_loader.dataset.enc_shape = new_enc_shape
             net.create_loss_func()
             net.to(device)
 
+            # Adding new classifiers does not curently
         if args.overwrite_classifier or args.add_classifier:
             net.create_classifier_levels(args.class_mode, args.multi_class,
-                                         args.no_reg, args.fft_class, args.acf_class, args.rnn, args.stft, dropout=args.d[3:],
+                                         args.no_reg, args.fft_class, args.acf_class, args.rnn, args.stft, dropout=args.d[
+                                             3:],
                                          crop_augment=args.crop_augment, tcn_class=args.tcn_class, ffa_class=args.ffa,
                                          overwrite=args.overwrite_classifier, ffa_args=args.ffa_args, dm0_class=args.dm0_class)
             net.to(device)
@@ -401,6 +378,7 @@ def main():
                             freeze=args.freeze, init=1, ada=args.ada)
         train_loader.dataset.length = net.input_shape[1]
         valid_loader.dataset.length = net.input_shape[1]
+        net.out_length = net.input_shape[1] // net.down_fac - self.crop * 2
         if test_loader is not None:
             test_loader.dataset.length = net.input_shape[1]
 
@@ -409,56 +387,32 @@ def main():
                                bias=args.clamp[0], clamp=args.clamp[1:], cmask=args.cmask, rfimask=args.rfimask)
             net.to(device)
 
-        for m in net.modules():
-            if 'Conv' in str(type(m)):
-                setattr(m, 'padding_mode', 'zeros')
-        # if args.untie_weights:
-        #     net = utils.untie_weights(net)
-        #     paras = []
-        #     for child in net.tcn.children():
-        #         for single_module in child.modules():
-        #             if single_module.__module__ == 'torch.nn.modules.conv':
-        #                 #print(single_module.__module__)
-        #                 #single_module.weight.data = single_module.weight.data
-        #                 #single_module.bias.data = single_module.bias.data
-        #                 dil = single_module.dilation[0]
-        #                 # single_module.weight = copy.deepcopy(single_module.weight)
-        #                 # single_module.bias = copy.deepcopy(single_module.bias)
-        #                 if dil == 15 or dil ==17:
-        #                     print(dil)
-        #                     #print(single_module.weight)
-        #                     paras.append(single_module.weight)
-        #     if paras[1] is paras[0]:
-        #         print('Parameters still tied')
-        #     else:
-        #         print('Parameters not tied anymore')
-        for child in net.encoder.modules():
-            if isinstance(child, nn.Dropout):
-                child.p = args.d[0]
-        if hasattr(net, 'tcn'):
-            for child in net.tcn.modules():
-                if isinstance(child, nn.Dropout):
-                    child.p = args.d[1]
-        for child in net.output_layer.modules():
-            if isinstance(child, nn.Dropout2d):
-                child.p = args.d[2]
-        # if hasattr(net, 'classifier_stft_0'):
-        #     for child in net.classifier_stft_0.modules():
-        #         if isinstance(child, nn.LSTM):
-
-        #             child.dropout = args.d[3]
-        for (child_name, child) in net.named_modules():
-            if child_name.startswith('classifier_stft'):
-                if hasattr(child, 'rnn'):
-                    child.rnn.dropout = args.d[4]
-                if hasattr(child, 'ini_dropout'):
-                    child.ini_dropout.p = args.d[3]
-                # for chil in child.children():
-                #     if isinstance(chil, nn.LSTM):
-                #         chil.dropout = args.d[3]
-                for chil in child.modules():
-                    if isinstance(chil, nn.Dropout2d):
-                        child.p = args.d[4]
+        # This section allowed the changing of dropout values in later training steps but is not supported currently
+        # for m in net.modules():
+        #     if 'Conv' in str(type(m)):
+        #         setattr(m, 'padding_mode', 'zeros')
+        # for child in net.encoder.modules():
+        #     if isinstance(child, nn.Dropout):
+        #         child.p = args.d[0]
+        # if hasattr(net, 'tcn'):
+        #     for child in net.tcn.modules():
+        #         if isinstance(child, nn.Dropout):
+        #             child.p = args.d[1]
+        # for child in net.output_layer.modules():
+        #     if isinstance(child, nn.Dropout2d):
+        #         child.p = args.d[2]
+        # for (child_name, child) in net.named_modules():
+        #     if child_name.startswith('classifier_stft'):
+        #         if hasattr(child, 'rnn'):
+        #             child.rnn.dropout = args.d[4]
+        #         if hasattr(child, 'ini_dropout'):
+        #             child.ini_dropout.p = args.d[3]
+        #         # for chil in child.children():
+        #         #     if isinstance(chil, nn.LSTM):
+        #         #         chil.dropout = args.d[3]
+        #         for chil in child.modules():
+        #             if isinstance(chil, nn.Dropout2d):
+        #                 child.p = args.d[4]
 
         if args.noise[3] == 1:
             args.noise = net.noise
@@ -512,7 +466,8 @@ def main():
     train_net = trainer.trainer(net, train_loader, valid_loader, test_loader, logging,
                                 device, args.bandpass, args.binary, args.noise, args.threshold, args.l, pre_pool=args.pre_pool,
                                 crop=args.crop, loss_weights=args.loss_weights, train_single=args.train_single,
-                                fft_loss=args.fft_loss, acf_loss=args.acf_loss, test_frac=args.test_samples[1],
+                                fft_loss=args.fft_loss, acf_loss=args.acf_loss, test_frac=args.test_samples[
+                                    1],
                                 acc_grad=args.acc_grad,
                                 loss_pool_mse=args.loss_pool_mse)
 
@@ -527,7 +482,8 @@ def main():
         train_net.logger.time_meter.reset()
         train_net.net.save_epoch(epoch)
         train_net.logger.epoch = epoch
-        loss_train = train_net.run('train', args.loops, only_class=args.no_reg, print_progress=args.progress)
+        loss_train = train_net.run(
+            'train', args.loops, only_class=args.no_reg, print_progress=args.progress)
         reg_loss_train = train_net.logger.loss_meter.value()[0]
         clas_loss_train = train_net.logger.loss_meter_2.value()[0]
         im_loss_train = train_net.logger.loss_meter_3.value()[0]
@@ -537,7 +493,8 @@ def main():
         clas_loss = train_net.logger.loss_meter_2.value()[0]
         im_loss = train_net.logger.loss_meter_3.value()[0]
         if test_loader is not None:
-            loss_test = train_net.run('test', 1, only_class=1, print_progress=args.progress)
+            loss_test = train_net.run(
+                'test', 1, only_class=1, print_progress=args.progress)
         else:
             loss_test = None
         if hasattr(net.scheduler, 'get_lr'):
@@ -548,7 +505,6 @@ def main():
             train_net.logger.log_loss(epoch, net.optimizer.param_groups[0]['lr'], train_net.net.noise,
                                       loss_train, loss_valid, loss_test, reg_loss_train,
                                       clas_loss_train, im_loss_train, reg_loss, clas_loss, im_loss)
-
 
         if hasattr(train_net.logger, 'last_test_mcc'):
             if not train_net.logger.last_test_mcc == 'None':

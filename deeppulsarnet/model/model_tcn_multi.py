@@ -88,7 +88,7 @@ class TemporalConvNet_multi(nn.Module):
     def forward(self, x):
 
         out_3 = torch.zeros(
-            (x.shape[0], self.complete_channels, x.shape[2])).cuda()
+            (x.shape[0], self.complete_channels, x.shape[2])).to(x.device)
         y = x
 
         for i in range(self.levels):

@@ -3,14 +3,11 @@ from torch import nn
 from torch import optim
 from model.model_preprocessing import Preprocess
 from model.model_encoder import pulsar_encoder
-from model.model_tcn import TemporalConvNet
 from model.model_tcn_multi import TemporalConvNet_multi
 from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
-from model.model_classifier import classifier
 from model.model_regressor_ffa import regressor_ffa
 from model.model_regressor_stft import regressor_stft_comb
-from model.model_classifier_filter import classifier_filter
 from torch.utils.checkpoint import checkpoint
 import numpy as np
 import sys
@@ -127,7 +124,7 @@ class pulsar_net(nn.Module):
             self.gauss_para[0] += 1
 
         self.gaussian_kernel = torch.Tensor(scipy.signal.gaussian(
-            *self.gauss_para[:2])).cuda().unsqueeze(0).unsqueeze(0).unsqueeze(0) * self.gauss_para[2]
+            *self.gauss_para[:2])).unsqueeze(0).unsqueeze(0).unsqueeze(0) * self.gauss_para[2]
 
         self.gaussian_kernel = torch.clamp(
             self.gaussian_kernel, 0, self.gauss_para[3])
@@ -236,7 +233,7 @@ class pulsar_net(nn.Module):
         overlap = self.net_chunks[1]
         split_val = np.linspace(0, x.shape[2], chunks + 1, dtype=int)
         output_tensor = torch.zeros(
-            x.shape[0], self.dec_input, x.shape[2] // self.down_fac).cuda()
+            x.shape[0], self.dec_input, x.shape[2] // self.down_fac).to(x.device)
         for chunk in range(chunks):
             ini_start_val = split_val[chunk]
             ini_end_val = split_val[chunk + 1]
@@ -284,7 +281,7 @@ class pulsar_net(nn.Module):
             encoded = encoded[:, :, self.crop:-self.crop].contiguous()
 
         class_tensor = torch.zeros(
-            (input.shape[0], self.used_classifiers, self.final_output)).cuda()
+            (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
         # switch = 0
         j = 0
         encoded = self.output_layer(encoded)
@@ -312,32 +309,10 @@ class pulsar_net(nn.Module):
             return encoded, classifier_output_multi, class_tensor
         return encoded, class_tensor[:, 0, :], torch.empty(0, requires_grad=True)
 
-    # def calc_encoded_length(self):
-    #     # Calculates the size of the encoded state
-    #     factor = self.stride2 * self.pool2
-    #     channels = np.asarray(self.encoder_channels2)
-    #     block_layers = len(channels[channels > 0])
-    #     pool_layers = len(channels[channels < 0])
-    #     whole_layers = block_layers * 2 + pool_layers
-    #     out_size = (self.input_shape[1] / (factor **
-    #                                        whole_layers) + 6) * abs(channels[-1])
-    #     return out_size
-
     def apply_classifier(self, input):
         class_tensor = torch.zeros(
-            (input.shape[0], self.used_classifiers, self.final_output)).cuda()
-        # switch = 0
+            (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
         j = 0
-        # if self.output_layer.use_direct_class:
-        #     input, class_tensor[:, j, :] = self.output_layer(input)
-        #     # switch = 1
-        #     j += 1
-        #     if not self.use_multi_class:
-        #         return input, class_tensor, torch.empty(0, requires_grad=True)
-        # else:
-        #     input = self.output_layer(input)
-        # if self.mode == 'autoencoder':
-        #     return input, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
         for classifier in self.classifiers:
             class_tensor[:, j, :] = classifier(input)
             j += 1
@@ -366,9 +341,6 @@ class pulsar_net(nn.Module):
         #     second_params = self.decoder.parameters()
         # else:
         #     second_params = self.decoder.network[:-freeze].parameters()
-
-        # self.optimizer = optim.Adam([{'params': encoder_params, 'lr': learn_rate_2},
-        #                              {'params': second_params, 'lr': learn_rate_1}], lr=learn_rate_1, weight_decay=decay)  #, amsgrad=True
 
         if freeze <= 0:
             # parameters = self.parameters()
@@ -450,6 +422,7 @@ class pulsar_net(nn.Module):
         self.loss_2 = nn.CrossEntropyLoss()
 
     def gauss_smooth(self, tensor):
+        self.gaussian_kernel = self.gaussian_kernel.to(tensor.device)
         pad = int((self.gaussian_kernel.shape[-1] - 1) / 2)
         if len(self.gaussian_kernel.shape) == 3:
             self.gaussian_kernel = self.gaussian_kernel.unsqueeze(1)

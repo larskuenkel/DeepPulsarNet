@@ -47,16 +47,6 @@ class trainer():
 
         self.loss_pool_mse = loss_pool_mse
 
-        # self.red = noise[4]
-        # if self.red:
-        #     white_noise = np.random.normal(
-        #         0, self.red, self.net.input_shape[1] * 10)
-        #     red_noise = [0]
-        #     for i in range(len(white_noise)):
-        #         red_noise.append(white_noise[i] + red_noise[-1])
-        #     self.red_noise = torch.cuda.FloatTensor(red_noise)
-        #     print('Maximum red noise drift: {}'.format(
-        #         max(self.red_noise) - min(self.red_noise)))
 
     def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False):
         # Runs the net over the training or validation set
@@ -78,40 +68,16 @@ class trainer():
                 new_y_shape[0] = x.shape[0]
                 y2 = y2.expand(new_y_shape)
             ten_x = x.to(self.device).float()
-            # Reduce size of too short files for being able to use pre_pool
-            # if ten_x.shape[2] < self.net.input_shape[1] and hasattr(self.net, 'pre_pool'):
-            #     if self.net.pre_pool:
-            #         current_length = ten_x.shape[2]
-            #         length_diff = current_length % self.net.pre_pool
-            #         new_length = current_length - length_diff
-            #         ten_x = ten_x[:, :, :new_length]
 
             ten_y = y.to(self.device).float()
             ten_y2 = y2.to(self.device).float()
 
-            # if not mode == 'test' and not self.train_loader.dataset.use_precomputed_output:
-            #     ten_y = self.smooth(ten_y)
-            # elif not mode == 'test' and self.train_loader.dataset.use_precomputed_output:
-            #     max_val = torch.max(ten_y[0, :, :])
-            #     if max_val > 1:
-            #         ten_y /= max_val
-
             if self.bandpass:
                 ten_x = self.apply_bandpass(ten_x)
 
-            # if hasattr(self.net, 'use_norm'):
-            #     if self.net.use_norm:
-            #         pass
-            #     else:
-            #         ten_x = self.noise_and_norm(ten_x, 2)
-            # else:
-            #     ten_x = self.noise_and_norm(ten_x, 2)
 
             ten_x.requires_grad = True
-            # if self.net.mode == 'autoencoder':
-            #     output_image = self.net(ten_x)
-            #     output_classifier = None
-            # else:
+
             output_image, output_classifier, output_single_class = self.net(
                 ten_x)  # net output
             if store_tseries:
@@ -141,19 +107,10 @@ class trainer():
                                                         0] - output_classifier[:, 1]
                 pulsar_count = (0 > class_result_single).sum().to(torch.float)
                 pulsar_fraction = pulsar_count / len(class_result_single)
-                # if pulsar_fraction >0.5:
-                #     print(ten_y2)
-                # if pulsar_fraction > 0:
-                #     class_result = torch.cuda.FloatTensor([0, 1])
-                # else:
-                #     class_result = torch.cuda.FloatTensor([1, 0])
-                # class_result = torch.cuda.FloatTensor([1-pulsar_fraction, pulsar_fraction])
-                class_result = torch.cuda.FloatTensor(
-                    [self.test_frac, pulsar_fraction])
-                # if not self.net.no_reg:
-                # mean_vals = torch.mean(output_classifier[:, :2], dim=0)
-                # print(ten_y2[0,-1])
-                # print(output_classifier)
+
+                class_result = torch.FloatTensor(
+                    [self.test_frac, pulsar_fraction]).to(self.device)
+
                 if self.no_reg:
                     periods = torch.mean(periods).unsqueeze(0)
                     # dummy_weights = torch.ones_like(periods)
@@ -161,59 +118,32 @@ class trainer():
                     class_soft_max = F.softmax(output_classifier[:, :2])
                     most_secure = torch.argmax(class_soft_max[:, 1])
                     periods = output_classifier[most_secure, 2].unsqueeze(0)
-                    # print(periods, output_classifier)
-                    #periods = torch.mean(periods).unsqueeze(0)
-                    # dummy_weights = output_classifier[most_secure,2].unsqueeze(0)
-                # print(periods.shape, class_result.shape)
-                # else:
-                #     output_classifier = class_result
+
                 ten_y2 = ten_y2[:1]
                 class_estimate = torch.cat(
                     (class_result, periods)).unsqueeze(0)
                 output_classifier = torch.cat(
                     (class_result, periods), dim=0).unsqueeze(0)
-                # output_classifier = torch.cat(
-                #         (class_result, periods), dim=0).unsqueeze(0)
-                # if not self.no_reg:
-                #     output_classifier = torch.cat(
-                #         (class_result, periods, dummy_weights), dim=0).unsqueeze(0)
-                #     class_estimate = torch.cat(
-                #         (periods, class_result, periods, dummy_weights)).unsqueeze(0)
-                # else:
-                #     output_classifier = torch.cat(
-                #         (class_result, periods), dim=0).unsqueeze(0)
-                #     class_estimate = torch.cat(
-                #         (periods, class_result)).unsqueeze(0)
-                # print(class_estimate)
+
             else:
-                # print(periods.shape, output_classifier.shape)
+
                 if self.net.mode == 'autoencoder':
-                    dummy = torch.zeros((len(periods), 2)).cuda()
+                    dummy = torch.zeros((len(periods), 2)).to(self.device)
                     dummy[:, 0] = 1
                     class_estimate = torch.cat(
                         (periods.float(), dummy), dim=1)
                 else:
-                    # class_estimate = torch.cat(
-                    #     (periods.float(), output_classifier), dim=1)
                     class_estimate = output_classifier
             if print_out:
 
                 print(ten_y2)
                 print(output_classifier)
-            # save_path = '/data/lkuenkel/data/palfa/sil_7_5_skip_3_out/'
-            # if self.net.epoch == 0:
-            #     for i in range(ten_x.shape[0]):
-            #         f_name = save_path + f'{step}_{i}_{self.mode}_{int(ten_y2[i,2])}.pt'
-            #         save_tensor = output_image[i,0,:]
-            #         torch.save(save_tensor, f_name)
+
             if self.mode == 'train':
-                # if step % self.acc_grad == 0:
-                #     self.net.optimizer.zero_grad()  # clear gradients for this training step
-                # backpropagation, compute gradients
+
                 loss.backward(retain_graph=True)
-                # print(self.net.encoder.network[1].net[0].weight_g.grad)
                 if step % self.acc_grad == 0:
-                    # torch.nn.utils.clip_grad_norm_(self.net.parameters(), 1)
+
                     self.net.optimizer.step()  # apply gradients
                     self.net.optimizer.zero_grad()
             # stack results for scatter plot
@@ -306,37 +236,6 @@ class trainer():
         tensor *= bpass[None, None, :]
         return tensor
 
-    # def noise_and_norm(self, tensor, axis):
-        # Add noise to the input and normalise each channel
-        # if not self.mode == 'test':
-        #     if self.mode == 'train':
-        #         noise_val = noise  # np.random.normal(noise, noise / 5)
-        #     else:
-        #         noise_val = noise
-        #     # noise_val = 0.1
-        #     # ten_noise = torch.cuda.FloatTensor(
-        #     #     tensor.shape).normal_(0, noise_val)
-        #     if self.red:
-        #         length = tensor.shape[2]
-        #         if self.mode == 'train':
-        #             start = np.random.randint(len(self.red_noise) - length)
-        #         else:
-        #             start = length
-        #         current_red_noise = self.red_noise[start:start + length]
-        #         tensor = tensor + current_red_noise[None, None, :]
-        #     ten_noise = torch.cuda.FloatTensor(
-        #         tensor.shape).normal_(0, noise_val).to(torch.long).to(torch.float)
-        #     tensor += ten_noise
-        # tensor -= torch.mean(tensor, keepdim=True, dim=axis)
-        # tensor -= torch.median(tensor, keepdim=True, dim=axis)[0]
-        # std_dev = torch.std(tensor, keepdim=True, dim=axis)
-        # std_dev = self.noise[0]
-        # tensor /= std_dev
-        # if hasattr(self, 'smooth_input'):
-        #     tensor = self.smooth_input(tensor)
-
-        # tensor -= 65
-        # return tensor
 
     def update_noise(self, epoch, name, decay, patience=3, ada=False, freeze=-1):
         # Update the noise when the loss was under the threshold for some time
@@ -502,16 +401,6 @@ class trainer():
 
     def calc_loss(self, output_im, target_im, output_clas, target_clas, only_class=0, single_class=None):
 
-        # if not self.train_mode:
-        #     reg_factor = 0.01
-        #     clas_factor = 0.01
-        #     autoenc_factor = 1
-        # else:
-        #     reg_factor = 0.3
-        #     clas_factor = 0.3
-        #     autoenc_factor = 1
-        # print(target_clas)
-
         reg_factor = self.loss_weights[0]
         clas_factor = self.loss_weights[1]
         autoenc_factor = self.loss_weights[2]
@@ -522,13 +411,8 @@ class trainer():
         if self.net.mode != 'autoencoder':
             periods = output_clas[:, 2:]
         else:
-            periods = torch.zeros((output_im.shape[0],1)).cuda()
+            periods = torch.zeros((output_im.shape[0],1)).to(output_im.device)
 
-        # if only_class:
-        #     periods = self.estimate_period(output_im_smooth[:, :1, :])
-        # else:
-        #     periods = output_clas[:,2]
-        #periods = torch.ones((output_im.shape[0], 1)).cuda()
 
         if not self.mode == 'test' and not self.net.mode == 'classifier' and not self.net.mode == 'short':
 
@@ -543,45 +427,15 @@ class trainer():
 
                 if self.loss_pool_mse:
                     max_val_out, max_pos_out = torch.max(output_im_smooth, dim=1, keepdim=True)
-                    max_val_target, max_pos_target = torch.max(target_im_smooth, dim=1, keepdim=True)
-                    # output_im_smooth = F.adaptive_max_pool2d(output_im_smooth.unsqueeze(1), (1, output_im.shape[2]))[:,0,:,:]
-                    # target_im_smooth = F.adaptive_max_pool2d(target_im_smooth.unsqueeze(1), (1, output_im.shape[2]))[:,0,:,:]
                     loss_in_out = max_val_out
                     loss_in_target = max_val_target
                 else:
                     loss_in_out = output_im_smooth
                     loss_in_target = target_im_smooth
-                # plt.imshow(target_im_smooth.cpu().numpy()[0,:,:500],aspect='auto')
-                # plt.show()
-                # target_cut = target_im_smooth[target_im_smooth >= 0.1]
-                # target_cut_2 = target_im_smooth[target_im_smooth < 0.1]
-                # ouput_cut = output_im_smooth[target_im_smooth >= 0.1]
-                # output_cut_2 = output_im_smooth[target_im_smooth < 0.1]
 
-                # pulse_weight = 10
-                # output_im_smooth = self.net.classifier_fft.compute_fft(
-                #     output_im_smooth)
-                # target_im_smooth = self.net.classifier_fft.compute_fft(
-                #     target_im, scale=self.fft_scale)
-
-                #remove nan values which are inserted when a real pulsar is in the data
-                # print(target_im)
-                # print(target_im_smooth)
-                # output_im_smooth = output_im_smooth[target_im[:,:,:] == target_im[:,:,:]]
-                # target_im_smooth = target_im_smooth[target_im[:,:,:] == target_im[:,:,:]]
-                # output_im_smooth = output_im_smooth[target_im_smooth == target_im_smooth]
-                # target_im_smooth = target_im_smooth[target_im_smooth == target_im_smooth]
-                # if self.net.train:
-                #     print(output_im_smooth.max(), target_im_smooth.max())
-                # print(output_im.shape, target_im.shape)
-
-                # loss_whole_im = self.net.loss_autoenc(
-                #     output_im_smooth, target_im_smooth)
                 loss_whole_im = self.net.loss_autoenc(
                     loss_in_out, loss_in_target)
 
-                # loss_whole_im = self.net.loss_autoenc(output_cut, target_cut) * pulse_weight
-                #             + self.net.loss_autoenc(output_cut_2, target_cut_2)
                 loss_val = loss_whole_im.data.cpu().numpy()
                 try:
                     self.logger.loss_meter_3.add(loss_val)
@@ -621,7 +475,7 @@ class trainer():
             ten_y_2 = torch.fmod(target_clas[:, 2],2).long()
 
             loss_2 = self.net.loss_2(output_clas_2, ten_y_2)
-            print(loss_2)
+            # print(loss_2)
             loss_val_2 = loss_2.data.cpu().numpy()
             weight_2 = len(output_clas_2)
             self.logger.loss_meter_2.add(loss_val_2, weight_2)

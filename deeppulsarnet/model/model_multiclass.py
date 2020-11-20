@@ -23,7 +23,7 @@ class MultiClass(nn.Module):
 
     def forward(self, x):
         # x_relu = x
-        out_tensor = torch.zeros(x.shape[0], self.output_vals).cuda()
+        out_tensor = torch.zeros(x.shape[0], self.output_vals).to(x.device)
         for j in range(self.number_classifiers):
             out_tensor[:, :2] = out_tensor[:, :2] + x[:, j, :2] * self.parameter[j]
         # if not self.no_reg:
