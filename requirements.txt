@@ -1,0 +1,9 @@
+pandas
+numpy
+torchnet
+jupyterlab
+git+git+https://github.com/telegraphic/sigpyproc@8f3f05335caeb386c9d6d32db97135145b96ab81#sigpyproc
+git+git+https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline@v2.0#SKA-TestVectorGenerationPipeline
+visdom
+pycm
+riptide-ffa
