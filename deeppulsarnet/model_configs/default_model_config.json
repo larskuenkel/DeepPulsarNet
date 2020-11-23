@@ -2,6 +2,8 @@
 	"initial_dropout" : 0.1,
 	"subtract_dm0" : false,
 	"concat_dm0" : false,
+	"initial_norm" : true,
+	"initial_norm_groups" : 1,
 	"encoder_channels" : [24],
 	"encoder_kernel" : 4,
 	"encoder_stride" : 4,

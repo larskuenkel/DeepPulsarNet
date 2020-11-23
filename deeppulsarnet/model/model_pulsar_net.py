@@ -19,17 +19,12 @@ import json
 
 
 class pulsar_net(nn.Module):
-    # Whole pulsar net. By default it contains an autoencoder as well as as a regressor
-    def __init__(self, model_para, input_shape, output_size, list_channels_conv, kernel_size, lr, dropout, pool=1, stride=2,
-                 binary=0, list_channels_lin=[128, 32], rnn=[0, 0], groups=4, bidirectional=False,
-                 residual=True, no_pad=False, tcn_kernel=5, tcn_layers=5, tcn_dilation=[40, 10, 5],
-                 mode='full', tcn_class=[0], acf_class=[0],
-                 tcn_channels=0, dec_channels=[0], add_chan=0, no_reg=0, rnn_dec_args=[[0], 0, 0, 0], bce_weight=1, crop=0,
-                 fft_class=[0], simple_class=0, norm=False, block_mode='add', reduce_mode='avg', tcn_mode='tcn_multi',
-                 filter_size=0, clamp=[65, -10, 10], dec_mode='conv', class_mode='simple', multi_class=False,
-                 gauss=(27, 15 / 4, 1, 1), enc_mode='conv', pool_multi=4, aa=False, stft=[10000], dm0='none',
-                 cmask=False, rfimask=False, crop_augment=0., ffa=[5, 2, 8, 10], ffa_args=[0.07, 1.1, 15, 80, 1],
-                 dm0_class=False, class_configs=[''], data_resolution=1):
+    # Whole pulsar net. By default it contains an classifier as well as as a classifier
+    def __init__(self, model_para, input_shape, lr, no_pad=False,
+                 mode='full', no_reg=0, clamp=[0, -1000, 1000],
+                 gauss=(27, 15 / 4, 1, 1),
+                 cmask=False, rfimask=False, 
+                 dm0_class=False, class_configs=[''], data_resolution=1, crop=0):
         super().__init__()
 
         print('Creating neural net.')
@@ -39,28 +34,17 @@ class pulsar_net(nn.Module):
         self.set_mode(mode)
 
         self.input_shape = input_shape
-        self.encoder_channels = list_channels_conv
 
-        self.crop = crop
-
-        if dec_channels[0]:
-            self.dec_channels = dec_channels
-        else:
-            self.dec_channels = list_channels_conv[::-1]
         self.stride = model_para.encoder_stride
         self.pool = model_para.encoder_pooling
 
-        self.kernel_encoder = kernel_size[0]
-        self.kernel_decoder = kernel_size[-1]
-
         self.no_pad = no_pad
-        self.binary = binary
-        self.tcn_class = tcn_class
+
+        self.crop = crop
+
         self.down_fac = (
             self.stride * self.pool) ** len(model_para.encoder_channels)
 
-        self.int_chan = self.input_shape[0] + add_chan
-        self.input_shape_2 = (self.int_chan, self.input_shape[1])
 
         self.output_chan = model_para.output_channels
 
@@ -69,23 +53,17 @@ class pulsar_net(nn.Module):
         self.data_resolution = data_resolution
         self.output_resolution = data_resolution * self.down_fac
 
-        self.set_preprocess(self.input_shape, norm,
-                            filter_size, bias=clamp[0], clamp=clamp[1:], dm0=model_para.subtract_dm0,
-                            groups=groups, cmask=cmask, rfimask=rfimask)
+        self.set_preprocess(self.input_shape, model_para.initial_norm,
+                            bias=clamp[0], clamp=clamp[1:], dm0=model_para.subtract_dm0,
+                            groups=model_para.initial_norm_groups, cmask=cmask, rfimask=rfimask)
 
-        # self.preprocess = Preprocess(self.input_shape, norm, filter_size)
-        self.tcn_mode = tcn_mode
 
-        if list_channels_conv[0] != 0:
-            if not model_para.concat_dm0:
-                input_encoder = self.input_shape
-            else:
-                input_encoder = (self.input_shape[0] + 1, self.input_shape[1])
-            self.encoder = pulsar_encoder(input_encoder, model_para,
-                                          no_pad=no_pad)
-            tcn_input = list_channels_conv[-1]
+        if not model_para.concat_dm0:
+            input_encoder = self.input_shape
         else:
-            tcn_input = self.input_shape[0]
+            input_encoder = (self.input_shape[0] + 1, self.input_shape[1])
+        self.encoder = pulsar_encoder(input_encoder, model_para,
+                                      no_pad=no_pad)
 
         if model_para.tcn_2_layers:
             self.use_tcn = 1
@@ -97,7 +75,7 @@ class pulsar_net(nn.Module):
 
         else:
             self.use_tcn = 0
-            dec_input = tcn_channels[0]
+            dec_input = model_para.tcn_2_channels
 
         self.dec_input = dec_input
         self.use_output_layer = 1
@@ -107,15 +85,11 @@ class pulsar_net(nn.Module):
             dropout=model_para.output_dropout, kernel=model_para.output_kernel,
             output_channels=self.output_chan)
 
-        rnn_input = tcn_channels[-1]
 
-        self.create_classifier_levels(class_configs, class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, dropout=dropout[3:],
-                                      crop_augment=crop_augment, tcn_class=tcn_class, ffa_class=ffa, ffa_args=ffa_args, dm0_class=dm0_class)
+        self.create_classifier_levels(class_configs, no_reg, dm0_class=dm0_class)
 
         self.create_loss_func()
 
-        self.enc_layer = len(self.encoder_channels)
-        self.dec_layer = 0
         self.freeze = 0
         # (int(111 / self.down_fac), int(15 / self.down_fac))
         self.gauss_para = gauss
@@ -131,9 +105,7 @@ class pulsar_net(nn.Module):
 
         # self.crop = self.tcn.biggest_pad
 
-    def create_classifier_levels(self, class_configs, class_mode, multi_class, no_reg, fft_class, acf_class, rnn, stft, bidirectional=True, dropout=[0, 0],
-                                 crop_augment=0., tcn_class=[0], ffa_class=[5, 2, 8, 10], overwrite=True, ffa_args=[0.07, 1.1, 15, 80, 1], dm0_class=False):
-        self.class_mode = class_mode
+    def create_classifier_levels(self, class_configs, no_reg=True, overwrite=True, dm0_class=False):
         self.dm0_class = dm0_class
         # if hasattr(self, 'classifiers'):
         #     for classifier in self.classifiers:
@@ -200,7 +172,7 @@ class pulsar_net(nn.Module):
 
         self.used_classifiers = len(self.classifiers)
 
-        if multi_class or self.used_classifiers > 1:
+        if self.used_classifiers > 1:
             self.use_multi_class = 1
             self.multi_class = MultiClass(self.used_classifiers, self.no_reg)
         else:
@@ -223,7 +195,7 @@ class pulsar_net(nn.Module):
 
     def set_mode(self, mode):
         self.mode = mode
-        if mode != 'autoencoder' and mode != 'full' and mode != 'classifier' and mode != 'short':
+        if mode != 'dedisperse' and mode != 'full' and mode != 'classifier' and mode != 'short':
             print('Unkown mode!')
             sys.exit()
 
@@ -285,7 +257,7 @@ class pulsar_net(nn.Module):
         # switch = 0
         j = 0
         encoded = self.output_layer(encoded)
-        if self.mode == 'autoencoder':
+        if self.mode == 'dedisperse':
             return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
 
         if hasattr(self, 'break_grad'):
@@ -401,9 +373,6 @@ class pulsar_net(nn.Module):
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, patience=3, factor=0.5)
 
-    def set_layer(self, layer):
-        self.enc_layer = layer
-        self.dec_layer = len(self.encoder_channels) - layer
 
     def create_loss_func(self, focal=0):
         # if not self.binary:
@@ -437,11 +406,11 @@ class pulsar_net(nn.Module):
         # plt.show()
         return smoothed[:, 0, :, :]
 
-    def set_preprocess(self, input_shape, norm, filter_size, bias=65, clamp=[-10, 10], dm0='none',
-                       groups=[1, 1, 1, 1], cmask=False, rfimask=False):
+    def set_preprocess(self, input_shape, norm, bias=65, clamp=[-10, 10], dm0='none',
+                       groups=1, cmask=False, rfimask=False):
         self.preprocess = Preprocess(
-            input_shape, norm, filter_size, bias=bias, clamp=clamp, dm0=dm0,
-            groups=groups[2], cmask=cmask, rfimask=rfimask)
+            input_shape, norm, bias=bias, clamp=clamp, dm0=dm0,
+            groups=groups, cmask=cmask, rfimask=rfimask)
 
     def append_dm0(self, ini_fil, out_dedis, down_fac=4):
         dm0_series = F.avg_pool2d(ini_fil.unsqueeze(

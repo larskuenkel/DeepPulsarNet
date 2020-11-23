@@ -9,9 +9,9 @@ import torch.nn.functional as F
 
 class trainer():
     #  class to store training and data augmentation routines
-    def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, bandpass, binary, noise, threshold, lr, pre_pool=0, use_mask=0,
-                 crop=0, loss_weights=(0.001, 0.001, 1, 1), train_single=False, fft_loss=0, acf_loss=0, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False):
+    def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
+                 loss_weights=(0.001, 0.001, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
+                 loss_pool_mse=False, bandpass=False):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -19,15 +19,11 @@ class trainer():
         self.net = net
         self.device = device
         self.bandpass = 0
-        self.smooth = model_smooth.smooth(binary=binary).to(device)
-        # if pre_pool:
-        #     self.smooth_input = model_smooth.smooth_input(pre_pool).to(device)
+        self.smooth = model_smooth.smooth().to(device)
         self.noise = noise
         self.threshold = threshold
         self.last_noise_update = -1
         self.lr = lr
-        self.binary = binary
-        self.use_mask = use_mask
         self.train_mode = 0
         self.crop = self.net.crop
         self.loss_weights = loss_weights
@@ -102,7 +98,7 @@ class trainer():
                                            output_classifier, ten_y2, only_class, single_class=output_single_class)
             loss = loss / self.acc_grad
 
-            if mode == 'test' and self.net.mode != 'autoencoder' and self.reduce_test:
+            if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test:
                 class_result_single = output_classifier[:,
                                                         0] - output_classifier[:, 1]
                 pulsar_count = (0 > class_result_single).sum().to(torch.float)
@@ -127,7 +123,7 @@ class trainer():
 
             else:
 
-                if self.net.mode == 'autoencoder':
+                if self.net.mode == 'dedisperse':
                     dummy = torch.zeros((len(periods), 2)).to(self.device)
                     dummy[:, 0] = 1
                     class_estimate = torch.cat(
@@ -151,7 +147,7 @@ class trainer():
                                      ten_y2.detach().cpu().numpy().tolist(),
                                      output_single_class.detach().cpu().numpy().tolist())
 
-            if not self.net.mode == 'autoencoder':
+            if not self.net.mode == 'dedisperse':
                 # if not self.mode == 'train':
                     # self.logger.stack_output(output_classifier.detach().cpu().numpy().tolist(),
                     #                          ten_y2.detach().cpu().numpy().tolist())
@@ -169,7 +165,7 @@ class trainer():
                         print(
                             '1 sample will not be included in the logged class errors.')
 
-        if self.net.mode == 'autoencoder':
+        if self.net.mode == 'dedisperse':
             final_loss = self.logger.loss_meter_3.value()[0]
         else:
             if self.mode == 'test':
@@ -189,7 +185,7 @@ class trainer():
         # if self.mode == 'validation' and self.logger.loss_meter_3.value()[0] < self.threshold[0]:
         #     self.train_mode = 1
         #     print('Changed loss weights.')
-        if not self.net.mode == 'autoencoder':
+        if not self.net.mode == 'dedisperse':
             self.logger.conf_mat[mode] = np.copy(
                 self.logger.confusion_meter.conf)
         return final_loss
@@ -320,14 +316,14 @@ class trainer():
             self.logger.loss_logger.log(
                 self.net.epoch, final_loss)
 
-        if not self.net.mode == 'autoencoder':
+        if not self.net.mode == 'dedisperse':
             self.logger.err_logger.log(
                 self.net.epoch, self.logger.classerr.value()[0])
             self.logger.confusion_logger.log(
                 self.logger.confusion_meter.value())
 
         # and not self.net.no_reg:
-        # and not self.net.mode == 'autoencoder':
+        # and not self.net.mode == 'dedisperse':
         if self.mode != 'train' and self.net.epoch % 1 == 0:
             # self.logger.plot_regressor(self.mode)
             # self.logger.plot_estimate(self.mode, self.no_reg)
@@ -346,7 +342,7 @@ class trainer():
             #     output_image).unsqueeze(1).detach()[:, 0, :]
             out_array = output_image.detach().cpu().numpy()
             target_array = ten_y.cpu().numpy()
-            self.logger.plot_autoencoder(
+            self.logger.plot_dedisperse(
                 in_array, out_array, target_array, ten_y2)
 
     def test_target_file(self, file, noise, noise_file='/media/lkuenkel/Uni/data/palfa/new_processed_2/p2030_53831_43886_0165_G65.12-00.39.C_0.decim.fil', start_val=2000,
@@ -408,7 +404,7 @@ class trainer():
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
-        if self.net.mode != 'autoencoder':
+        if self.net.mode != 'dedisperse':
             periods = output_clas[:, 2:]
         else:
             periods = torch.zeros((output_im.shape[0],1)).to(output_im.device)
@@ -470,7 +466,7 @@ class trainer():
             loss_whole = None
 
         # or (self.net.mode == 'full' and self.net.epoch != 0):
-        if self.net.mode != 'autoencoder':
+        if self.net.mode != 'dedisperse':
             output_clas_2 = output_clas[:, :2]
             ten_y_2 = torch.fmod(target_clas[:, 2],2).long()
 

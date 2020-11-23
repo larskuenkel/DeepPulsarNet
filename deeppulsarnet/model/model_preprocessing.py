@@ -6,11 +6,10 @@ import torch
 
 class Preprocess(nn.Module):
     # Preprocessing module
-    def __init__(self, input_shape, norm, filter_size, bias=65, clamp=[-10, 10], dm0='none', groups=1, cmask=False, rfimask=False):
+    def __init__(self, input_shape, norm, bias=0, clamp=[-1000, 1000], dm0='none', groups=1, cmask=False, rfimask=False):
         super().__init__()
 
         self.input_shape = input_shape
-        self.filter_size = filter_size
         self.bias = bias
         self.clamp = clamp
         self.use_norm = norm
