@@ -1,6 +1,6 @@
 ## DeepPulsarNet
  
-This program allows searching for pulsars in filterbank files using neural network.
+This Python 3 program allows searching for pulsars in filterbank files using neural network.
 
 # Installation
 
