@@ -10,7 +10,7 @@ This Python 3 program allows searching for pulsars in filterbank files using neu
 For the data preparation and simulation we additionally require:
 * [Tempo2](https://bitbucket.org/psrsoft/tempo2/)
 * [sigproc](https://github.com/SixByNine/sigproc) with the binaries linked in your PATH
-* The [SKA-TestVectorGenerationPipeline v2.0](https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline/tree/v2.0)
+* The [SKA-TestVectorGenerationPipeline v2.0](https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline/tree/v2.0) ('git clone --branch v2.0 --single-branch  https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline.git')
 
 # Basic Workflow
 
