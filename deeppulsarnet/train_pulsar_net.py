@@ -139,6 +139,10 @@ def main():
                         default=0, help='Crop output by this much at both edges.')
     parser.add_argument('--reset_pre', action='store_true',
                         help='Reset the preprocessing option when loading a model.')
+    parser.add_argument('--set_based', action='store_true',
+                        help='Cycle through the whole observation set during one epoch and add random simulations.')
+    parser.add_argument('--sim_prob', type=float, default=0.5,
+                        help='Simulation probability when set_based is used.')
 
     args = parser.parse_args()
 
@@ -215,7 +219,8 @@ def main():
     train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
         args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
         snr_range=args.snr_range, shift=args.shift, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap)
+        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+        set_based=args.set_based, sim_prob=args.sim_prob)
 
     if args.path_test != '' or args.use_val_as_test:
         _, test_loader, _, _, _, _, _ = data_loader.create_loader(

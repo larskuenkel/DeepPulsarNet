@@ -10,7 +10,8 @@ class FilDataset(data_utils.Dataset):
         # Dataset which contains the filterbanks
     def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, shift=False,
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
-                 dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4):
+                 dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
+                 set_based=False, sim_prob=0.5):
         self.df = df
         self.df.reset_index(drop=True, inplace=True)
         #self.df.sort_values('Unnamed: 0', inplace=True)
@@ -18,6 +19,11 @@ class FilDataset(data_utils.Dataset):
         self.mode = mode
         self.length = length
         self.channels = channels
+
+        nan_value = float("NaN")
+        self.psr_sim = self.df.replace("", nan_value)
+        self.psr_sim.dropna(subset=["FileName"], inplace=True)
+
         if len(edge)==1:
             self.edge = [edge[0],edge[0]]
         elif len(edge)==2:
@@ -38,6 +44,9 @@ class FilDataset(data_utils.Dataset):
         self.net_out = net_out
         self.dm_range = dm_range
         self.dmsplit = dmsplit
+
+        self.set_based = set_based
+        self.sim_prob = sim_prob
 
         if self.dmsplit:
             print(dm_overlap)
@@ -60,23 +69,50 @@ class FilDataset(data_utils.Dataset):
             self.use_precomputed_output = 0
 
     def __getitem__(self, idx):
-        labels, name = grab_labels(self.df.iloc[idx])
-        file = self.df.iloc[idx]['FileName']
-        if len(self.noise_df)>1:
-            noise_file_index = self.noise_df.sample().index
-            noise_row = self.noise_df.loc[noise_file_index]
-            labels = np.append(labels, noise_row['Unnamed: 0'])
-            noise_file = noise_row['FileName'].item()
+        if not self.set_based:
+            labels, name = grab_labels(self.df.iloc[idx], index=idx)
+            sim_file = self.df.iloc[idx]['FileName']
+            if len(self.noise_df)>1:
+                noise_file_index = self.noise_df.sample().index
+                noise_row = self.noise_df.loc[noise_file_index]
+                labels = np.append(labels, noise_row['Unnamed: 0'])
+                noise_file = noise_row['FileName'].item()
+            else:
+                labels = np.append(labels, -1)
+                noise_file = ''
+            if self.use_precomputed_output:
+                # if not 'J' in name:
+                target_file = self.df.iloc[idx]['MaskName']
+                # else:
+                # target_file = ''
+            else:
+                target_file = ''
         else:
-            labels = np.append(labels, -1)
-            noise_file = ''
-        if self.use_precomputed_output:
-            # if not 'J' in name:
-            target_file = self.df.iloc[idx]['MaskName']
-            # else:
-            # target_file = ''
-        else:
-            target_file = ''
+            labels, name = grab_labels(self.noise_df.iloc[idx], index=idx, set_based=self.set_based)
+            noise_file = self.noise_df.iloc[idx]['FileName']
+            obs_label = int(labels[2])
+            if obs_label % 2 == 0:
+                roll = np.random.uniform()
+                choice = 1 if roll < self.sim_prob else 0
+            else:
+                choice = 0
+
+            if choice:
+                sim_file_index = self.psr_sim.sample().index
+                sim_row = self.psr_sim.loc[sim_file_index]
+                labels = np.append(labels, sim_row['Unnamed: 0'])
+                labels[0] = sim_row['P0']
+                labels[1] = sim_row['DM']
+                labels[2] = 1
+                sim_file = sim_row['FileName'].values[0]
+
+                # target_file = self.psr_sim.iloc[sim_file_index]['MaskName'].values[0]
+                target_file = sim_row['MaskName'].values[0]
+            else:
+                labels = np.append(labels, -1)
+                sim_file = ''
+                target_file = ''
+            noise_file_index = idx
 
         if self.dmsplit:
             dm_indexes = check_range(self.dm_ranges, labels[1])
@@ -84,7 +120,7 @@ class FilDataset(data_utils.Dataset):
             dm_indexes = [0]
             self.net_out = 1
         noisy_data, orig_data = load_filterbank(
-            file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
+            sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
                 1], down_factor=self.down_factor,
             dm=labels[1], shift=self.shift, test_samples=self.test_samples, name=name, nulling=self.nulling,
             dmsplit=self.dmsplit, dm_indexes=dm_indexes, net_out=self.net_out)
@@ -92,7 +128,10 @@ class FilDataset(data_utils.Dataset):
         return noisy_data, orig_data, labels
 
     def __len__(self):
-        return len(self.df)
+        if not self.set_based:
+            return len(self.df)
+        else:
+            return len(self.noise_df)
 
 
 def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(1, 1, 1), edge=[0,0], start_val=2000, test=False,
@@ -101,7 +140,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
         # Load filterbank from disk with sigpyproc
     # print(file, noise, down_factor)
     if not test:
-        if not pd.isna(file):
+        if not (pd.isna(file) or file == ''):
             current_file = reader(file)
             start, nsamps = choose_start(mode, current_file, length, start_val)
             current_data = current_file.readBlock(start, nsamps)
@@ -124,7 +163,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                 mode, current_noise_file, length, start_val, down_factor=down_factor)
             current_noise = current_noise_file.readBlock(start_noise, nsamps)
 
-            if pd.isna(file):
+            if pd.isna(file) or file == '':
                 data_array = np.asarray(current_noise)#.T
                 #  no multiplication needed due to later normalisation
                 orig_array = np.zeros_like(data_array)
@@ -221,10 +260,22 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                 return data_array[:,edge[0]:-edge[1], :], data_array[:,edge[0]:-edge[1], :]
 
 
-def grab_labels(row):
+def grab_labels(row, index=0, set_based=0):
     # Grab the target labels for the regressor
-    label_array = np.asarray(
-        (row.loc['P0'], row.loc['DM'], row.loc['Label'], row.loc['Unnamed: 0'], row.loc['f0'])).astype('float32')
+    if not set_based:
+        if row.loc['Label']!=3:
+            label_array = np.asarray(
+            (row.loc['P0'], row.loc['DM'], row.loc['Label'], row.loc['Unnamed: 0'], index)).astype('float32')
+        else:
+            label_array = np.asarray(
+            (row.loc['PSR P0'], row.loc['PSR DM'], row.loc['Label'], row.loc['Unnamed: 0'], index)).astype('float32')
+    else:
+        if 'PSR P0' not in row:
+            label_array = np.asarray(
+            (row.loc['P0'], row.loc['DM'], row.loc['Label'], row.loc['Unnamed: 0'], index)).astype('float32')
+        else:
+            label_array = np.asarray(
+            (row.loc['PSR P0'], row.loc['PSR DM'], row.loc['Label'], row.loc['Unnamed: 0'], index)).astype('float32')
     name = row.loc['JNAME']
     return label_array, name
 
