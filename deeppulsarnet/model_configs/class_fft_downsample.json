@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "fft",
+	"name" : "fft_harm_downsample",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
@@ -10,5 +10,5 @@
 	"norm" : false,
 	"nn_layers" : 1,
 	"height_dropout" : 0,
-	"harmonic_downsample" : false
+	"harmonic_downsample" : true
 }

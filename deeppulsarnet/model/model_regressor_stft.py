@@ -86,7 +86,7 @@ class Height_conv(nn.Module):
             return output
 
 
-def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0):
+def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0, harmonic_downsample=False):
     if length == 0:
         length = x.shape[2]
     if hop_length == 0:
@@ -107,9 +107,19 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
             if harm_counter == 0:
                 added = power_stft[:, :, :]
             else:
-                downsampled = F.interpolate(power_stft.transpose(
-                    2, 1), scale_factor=harm_counter + 1, mode='nearest').transpose(2, 1)
-                added = added[:, :, :] + downsampled[:, :crop, :]
+                if not harmonic_downsample:
+                    upsampled = F.interpolate(power_stft.transpose(
+                        2, 1), scale_factor=harm_counter + 1, mode='nearest').transpose(2, 1)
+                    added = added[:, :, :] + upsampled[:, :crop, :]
+                    # print(added, upsampled)
+                else:
+                    downsampled = F.max_pool1d(power_stft.transpose(
+                        2, 1), kernel_size=(harm_counter + 1),stride=(harm_counter + 1)).transpose(2, 1)[:, :crop, :]
+                    pad_val = added.shape[1] - downsampled.shape[1]
+                    downsampled = F.pad(downsampled, (0,0,0,pad_val))
+                    added = added[:, :, :] + downsampled
+                    # print(added, downsampled, pad_val)
+                # print(added.device, added.shape)
             added_harmonics += 1
             if added_harmonics == 2 ** stft_count:
                 if pool_size:
@@ -147,7 +157,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
 class regressor_stft_comb(nn.Module):
     def __init__(self, input_length, input_resolution, height_dropout=0, norm=0, harmonics=4, nn_layers=2,
                  stft_count=1, dm0_class=False, crop_factor=0.8, channels=8,
-                 kernel=11):
+                 kernel=11, name='', harmonic_downsample=False):
         super().__init__()
         self.input_length = input_length
         #self.crop = int(crop_factor * (self.input_length // 2))
@@ -170,6 +180,9 @@ class regressor_stft_comb(nn.Module):
         self.lengths = []
         self.total_height = 0
         self.heights = []
+
+        self.name = name
+        self.harmonic_downsample = harmonic_downsample
 
         for j in range(stft_count):
             current_in = 1
@@ -236,7 +249,7 @@ class regressor_stft_comb(nn.Module):
         if pretrain_conv:
             self.pretrain_conv()
 
-        self.fft_res = 1 / (self.input_resolution)
+        self.fft_res = 1 / (self.input_resolution * self.min_length)
 
     def forward(self, x):
 
@@ -246,7 +259,7 @@ class regressor_stft_comb(nn.Module):
         k = 0
         for length in self.lengths:
             stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
-                                harmonics=self.harmonics)
+                                harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample)
             out_pool = getattr(self, f"pool_{length}")(stft.unsqueeze(1))
             out_pool = out_pool[:, 0, :, :self.min_length // 2, :]
             current_height = out_pool.shape[1]
@@ -269,9 +282,10 @@ class regressor_stft_comb(nn.Module):
 
         out_pool, max_pos = self.glob_pool(out_conv)
         #out_pool = out_pool[:, 0, :, :, :]
-        max_pos = 1  # max_pos[:, :1, 0, 0, 0].float()
+        print(max_pos, out_conv.shape, self.fft_res, 1 / (self.input_resolution * self.input_length))
+        max_pos = max_pos[:, :1, 0, 0].float()
 
-        max_pos_freq = 1  # max_pos // out_conv.shape[4] % out_conv.shape[3]
+        max_pos_freq = max_pos // out_conv.shape[3] % out_conv.shape[2]
         # (max_pos % out_conv.shape[4]) % (self.harmonics + 1)
         max_pos_harm = 1
         # (max_pos % out_conv.shape[4]) // (self.harmonics + 1)
@@ -281,9 +295,9 @@ class regressor_stft_comb(nn.Module):
 
         output = self.final(out_pool_final)
 
-        #output_freq = 1 / (max_pos_freq * self.fft_res / (2 ** max_pos_harm) + 0.00001)
+        output_freq = 1 / (max_pos_freq * self.fft_res + 0.0000001)
         #output_freq = output_freq.clamp(0, 5)
-        output_freq = torch.ones((x.shape[0], 1)).to(x.device)
+        #output_freq = torch.ones((x.shape[0], 1)).to(x.device)
         output = torch.cat((output, output_freq), dim=1)
         # print(output_freq)
         return output

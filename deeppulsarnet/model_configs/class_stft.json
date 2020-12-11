@@ -9,5 +9,6 @@
 	"harmonics" : 4,
 	"norm" : false,
 	"nn_layers" : 3,
-	"height_dropout" : 0.3
+	"height_dropout" : 0.3,
+	"harmonic_downsample" : false
 }

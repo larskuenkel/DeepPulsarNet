@@ -110,7 +110,7 @@ class Height_conv(nn.Module):
 class regressor_ffa(nn.Module):
     def __init__(self, input_resolution, no_reg=True, dm0_class=False,
         pooling=1, nn_layers=2, channels=8, kernel=11, norm=True, use_ampl=False, pytorch_ffa=False,
-        min_period=0.09, max_period=1.1, bins_min=20, bins_max=25, remove_threshold=True):
+        min_period=0.09, max_period=1.1, bins_min=20, bins_max=25, remove_threshold=True, name=''):
         super().__init__()
         self.no_reg = no_reg
         if self.no_reg:
@@ -132,6 +132,7 @@ class regressor_ffa(nn.Module):
         self.bins_min = bins_min
         self.bins_max = bins_max
         self.remove_threshold = remove_threshold
+        self.name = name
 
         if self.use_pytorch:
             # curently broken due to different riptide structure

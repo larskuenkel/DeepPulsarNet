@@ -311,7 +311,7 @@ def main():
                          clamp=args.clamp, gauss=args.gauss,
                          cmask=args.cmask, rfimask=args.rfimask, dm0_class=args.dm0_class,
                          class_configs=args.class_configs, data_resolution=data_resolution,
-                         crop=args.crop).to(device)
+                         crop=args.crop, edge=args.edge).to(device)
         net.edge = train_loader.dataset.edge
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)

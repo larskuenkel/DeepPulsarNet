@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 import argparse
 import json
 
+from data_loader import dataset
+
 
 class pulsar_net(nn.Module):
     # Whole pulsar net. By default it contains an classifier as well as as a classifier
@@ -24,7 +26,8 @@ class pulsar_net(nn.Module):
                  mode='full', no_reg=0, clamp=[0, -1000, 1000],
                  gauss=(27, 15 / 4, 1, 1),
                  cmask=False, rfimask=False, 
-                 dm0_class=False, class_configs=[''], data_resolution=1, crop=0):
+                 dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
+                 edge=[0,0]):
         super().__init__()
 
         print('Creating neural net.')
@@ -41,6 +44,8 @@ class pulsar_net(nn.Module):
         self.no_pad = no_pad
 
         self.crop = crop
+
+        self.edge = edge
 
         self.down_fac = (
             self.stride * self.pool) ** len(model_para.encoder_channels)
@@ -150,12 +155,13 @@ class pulsar_net(nn.Module):
 
             # if 'ffa' in self.class_mode:
             if class_para.class_type == 'ffa':
-                setattr(self, "classifier_ffa%s" % added, regressor_ffa(self.output_resolution, no_reg=True, dm0_class=False,
+                setattr(self, f"classifier_ffa{added}", regressor_ffa(self.output_resolution, no_reg=True, dm0_class=False,
                                                                         pooling=class_para.pooling, nn_layers=class_para.nn_layers, channels=class_para.channels,
                                                                         kernel=class_para.kernel, norm=class_para.norm, use_ampl=class_para.only_use_amplitude,
                                                                         min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
                                                                         bins_max=class_para.bins_max,
-                                                                        remove_threshold=class_para.remove_dynamic_threshold))
+                                                                        remove_threshold=class_para.remove_dynamic_threshold,
+                                                                        name=f"classifier_ffa{added}"))
                 self.classifiers.append(
                     getattr(self, "classifier_ffa%s" % added))
 
@@ -164,7 +170,8 @@ class pulsar_net(nn.Module):
                 setattr(self, f"classifier_{class_para.name}", regressor_stft_comb(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
                                                                                    harmonics=class_para.harmonics, nn_layers=class_para.nn_layers, stft_count=class_para.stft_count,
                                                                                    dm0_class=dm0_class, crop_factor=class_para.crop_factor, channels=class_para.channels,
-                                                                                   kernel=class_para.kernel))
+                                                                                   kernel=class_para.kernel,
+                                                                                   name=f"classifier_{class_para.name}", harmonic_downsample=class_para.harmonic_downsample))
                 self.classifiers.append(
                     getattr(self, f"classifier_{class_para.name}"))
         # else:
@@ -417,3 +424,36 @@ class pulsar_net(nn.Module):
             1), (ini_fil.shape[1], 4), 4, padding=0)[:, 0, :, :]
         new_out = torch.cat((out_dedis, dm0_series), dim=1)
         return new_out
+
+    def test_single_file(self, noise_file, file='', noise=[0,0,0], start_val=2000,
+                         verbose=0, nulling=(0, 0, 0, 0, 0, 0, 0, 0)):
+
+        if hasattr(self, 'edge'):
+            edge = self.edge
+        else:
+            edge = [0,0]
+        data, target_array = dataset.load_filterbank(
+            file, self.input_shape[1], 0, noise=noise_file,
+            edge=edge, noise_val=noise, start_val=start_val, nulling=nulling)
+
+        device = next(self.parameters()).device
+        data_tensor = torch.tensor(
+            data, dtype=torch.float).unsqueeze(0).to(device)
+        # data_tensor = self.noise_and_norm(data_tensor, 2)
+        # target = self.smooth(torch.tensor(
+        #     target_array, dtype=torch.float).unsqueeze(0).to(self.device))
+        # plt.imshow(target[0,:,:], aspect='auto')
+        # plt.show()
+        output_image, output_reg, output_single = self(data_tensor)
+        # loss = self.calc_loss(output_image_mask, ten_y_mask,
+        #                           output_classifier, ten_y2)
+        output = output_image.squeeze()
+        # print(output)
+        # plt.imshow(output, aspect='auto')
+        # plt.show()
+        if verbose:
+            out_vals = torch.nn.Softmax(dim=1)(output_reg[:,:2])
+            print(out_vals)
+            print(output_single)
+        # return loss
+        return output_image, output_reg, output_single
