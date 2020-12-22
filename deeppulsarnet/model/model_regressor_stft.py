@@ -282,7 +282,7 @@ class regressor_stft_comb(nn.Module):
 
         out_pool, max_pos = self.glob_pool(out_conv)
         #out_pool = out_pool[:, 0, :, :, :]
-        print(max_pos, out_conv.shape, self.fft_res, 1 / (self.input_resolution * self.input_length))
+        # print(max_pos, out_conv.shape, self.fft_res, 1 / (self.input_resolution * self.input_length))
         max_pos = max_pos[:, :1, 0, 0].float()
 
         max_pos_freq = max_pos // out_conv.shape[3] % out_conv.shape[2]
