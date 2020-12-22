@@ -2,7 +2,6 @@ from model import model_smooth
 import torch
 import numpy as np
 from data_loader import dataset
-import utils
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 
