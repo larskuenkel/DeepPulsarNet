@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 class FilDataset(data_utils.Dataset):
         # Dataset which contains the filterbanks
-    def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, shift=False,
+    def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, 
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
                  dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
                  set_based=False, sim_prob=0.5):
@@ -37,7 +37,7 @@ class FilDataset(data_utils.Dataset):
         self.noise = (0.3, 2)
         self.enc_shape = enc_shape
         self.down_factor = down_factor
-        self.shift = shift
+        # self.shift = shift
         self.test_samples = test_samples
         self.nulling = nulling
 
@@ -122,7 +122,7 @@ class FilDataset(data_utils.Dataset):
         noisy_data, orig_data = load_filterbank(
             sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
                 1], down_factor=self.down_factor,
-            dm=labels[1], shift=self.shift, test_samples=self.test_samples, name=name, nulling=self.nulling,
+            dm=labels[1], test_samples=self.test_samples, name=name, nulling=self.nulling,
             dmsplit=self.dmsplit, dm_indexes=dm_indexes, net_out=self.net_out)
         # print(noisy_data.shape, orig_data.shape)
         return noisy_data, orig_data, labels
@@ -135,7 +135,7 @@ class FilDataset(data_utils.Dataset):
 
 
 def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(1, 1, 1), edge=[0,0], start_val=2000, test=False,
-                    labels=0, enc_length=1875, down_factor=1, dm=0, shift=False, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
+                    labels=0, enc_length=1875, down_factor=1, dm=0, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
                     dmsplit=False, dm_indexes=0, net_out=1):
         # Load filterbank from disk with sigpyproc
     # print(file, noise, down_factor)
@@ -192,13 +192,14 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
         enc_down = int(length / down_factor)
         if target_file != '' and not pd.isna(file):
             current_target = np.load(target_file)
+            current_target = current_target // down_factor
             # print(current_target.shape, down_factor)
             start_down = int(start / down_factor)
-            if shift:
-                # shift shifts the target output according to the DM, still needs to work with data from different bandwidths
-                dm_shift = int(4.15 * 10**6 * (1396**-2 -
-                                               1443**-2) * dm / (0.64 * down_factor))
-                start_down -= dm_shift
+            # if shift:
+            #     # shift shifts the target output according to the DM, still needs to work with data from different bandwidths
+            #     dm_shift = int(4.15 * 10**6 * (1396**-2 -
+            #                                    1443**-2) * dm / (0.64 * down_factor))
+            #     start_down -= dm_shift
 
             current_target = current_target[start_down: start_down + enc_down]
 

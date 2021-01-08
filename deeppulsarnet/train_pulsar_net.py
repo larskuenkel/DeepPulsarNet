@@ -93,8 +93,8 @@ def main():
                         default=[0, 0, 0], help='Range of SNR. First number gives the number of noise samples')
     parser.add_argument('--dm_range', type=float, nargs=2,
                         default=[0, 2000], help='Range of DM.')
-    parser.add_argument('--shift', action='store_true',
-                        help='Shift the target according to the DM. currently broken.')
+    # parser.add_argument('--shift', action='store_true',
+    #                     help='Shift the target according to the DM. currently broken.')
     parser.add_argument('--loss_weights', type=float, nargs=4,
                         default=(0.001, 0.001, 1, 1), help='Loss weights. [regression, classification, autoencoder, single_classifiers]')
     parser.add_argument('--train_single', action='store_false',
@@ -218,7 +218,7 @@ def main():
 
     train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
         args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
-        snr_range=args.snr_range, shift=args.shift, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
+        snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
         dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
         set_based=args.set_based, sim_prob=args.sim_prob)
 
