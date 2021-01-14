@@ -67,7 +67,7 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
             down_factor=down_factor, nulling=nulling, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
             set_based=set_based, sim_prob=sim_prob)
         train_loader = data_utils.DataLoader(train_dataset, shuffle=True,
-                                             batch_size=batch, num_workers=2, drop_last=True)
+                                             batch_size=batch, num_workers=1, drop_last=True)
     else:
         train_loader = None
     valid_dataset = dataset.FilDataset(
