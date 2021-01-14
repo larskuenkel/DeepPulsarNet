@@ -10,7 +10,7 @@ class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
                  loss_weights=(0.001, 0.001, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False, bandpass=False):
+                 loss_pool_mse=False, bandpass=False, relabel_set =False):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -42,8 +42,10 @@ class trainer():
 
         self.loss_pool_mse = loss_pool_mse
 
+        self.relabel_set = relabel_set
 
-    def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False):
+
+    def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False, reverse_batch=False):
         # Runs the net over the training or validation set
         if mode == 'test':
             torch.manual_seed(0)
@@ -62,107 +64,133 @@ class trainer():
                 new_y_shape = list(y2.shape)
                 new_y_shape[0] = x.shape[0]
                 y2 = y2.expand(new_y_shape)
-            ten_x = x.to(self.device).float()
 
-            ten_y = y.to(self.device).float()
-            ten_y2 = y2.to(self.device).float()
-
-            if self.bandpass:
-                ten_x = self.apply_bandpass(ten_x)
-
-
-            ten_x.requires_grad = True
-
-            output_image, output_classifier, output_single_class = self.net(
-                ten_x)  # net output
-            if store_tseries:
-                torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
-
-            if store_stats:
-                means = output_image[:, 0, :].mean(
-                    dim=1).detach().cpu().numpy()
-                stds = output_image[:, 0, :].std(dim=1).detach().cpu().numpy()
-                maxs = output_image[:, 0, :].max(
-                    dim=1)[0].detach().cpu().numpy()
-                combined_vals = np.asarray((means, stds, maxs)).T.tolist()
-
-                self.logger.stats.extend(combined_vals)
-
-            if self.crop:
-                ten_y, output_image = self.crop_target_output(
-                    self.crop, ten_y, output_image)
-
-
-            loss, periods = self.calc_loss(output_image, ten_y,
-                                           output_classifier, ten_y2, only_class, single_class=output_single_class)
-            loss = loss / self.acc_grad
-
-            if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test:
-                class_result_single = output_classifier[:,
-                                                        0] - output_classifier[:, 1]
-                pulsar_count = (0 > class_result_single).sum().to(torch.float)
-                pulsar_fraction = pulsar_count / len(class_result_single)
-
-                class_result = torch.FloatTensor(
-                    [self.test_frac, pulsar_fraction]).to(self.device)
-
-                if self.no_reg:
-                    periods = torch.mean(periods).unsqueeze(0)
-                    # dummy_weights = torch.ones_like(periods)
-                else:
-                    class_soft_max = F.softmax(output_classifier[:, :2])
-                    most_secure = torch.argmax(class_soft_max[:, 1])
-                    periods = output_classifier[most_secure, 2].unsqueeze(0)
-
-                ten_y2 = ten_y2[:1]
-                class_estimate = torch.cat(
-                    (class_result, periods)).unsqueeze(0)
-                output_classifier = torch.cat(
-                    (class_result, periods), dim=0).unsqueeze(0)
-
+            if reverse_batch and mode == 'train':
+                batch_loops = 2
             else:
+                batch_loops = 1
 
-                if self.net.mode == 'dedisperse':
-                    dummy = torch.zeros((len(periods), 2)).to(self.device)
-                    dummy[:, 0] = 1
-                    class_estimate = torch.cat(
-                        (periods.float(), dummy), dim=1)
+            for batch_loop in range(batch_loops):
+
+                if batch_loop==0:
+                    ten_x = x.to(self.device).float()
+                    ten_y = y.to(self.device).float()
+                    ten_y2 = y2.to(self.device).float()
+                    ten_x.requires_grad = True
                 else:
-                    class_estimate = output_classifier
-            if print_out:
+                    ten_x = ten_x.flip(2)
+                    ten_y = torch.zeros_like(ten_y)
+                    #ten_y2 = torch.zeros_like(ten_y2)
+                    null_indices = [0,1,2]
+                    ten_y2[:,null_indices] = 0
 
-                print(ten_y2)
-                print(output_classifier)
+                # ten_x = x.to(self.device).float()
 
-            if self.mode == 'train':
+                # ten_y = y.to(self.device).float()
+                # ten_y2 = y2.to(self.device).float()
 
-                loss.backward(retain_graph=True)
-                if step % self.acc_grad == 0:
+                # if self.bandpass:
+                #     ten_x = self.apply_bandpass(ten_x)
 
-                    self.net.optimizer.step()  # apply gradients
-                    self.net.optimizer.zero_grad()
-            # stack results for scatter plot
-            self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
-                                     ten_y2.detach().cpu().numpy().tolist(),
-                                     output_single_class.detach().cpu().numpy().tolist())
 
-            if not self.net.mode == 'dedisperse':
-                # if not self.mode == 'train':
-                    # self.logger.stack_output(output_classifier.detach().cpu().numpy().tolist(),
-                    #                          ten_y2.detach().cpu().numpy().tolist())
-                try:
-                    self.logger.classerr.add(
-                        output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
-                    self.logger.confusion_meter.add(
-                        output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
-                    # print(np.array2string(self.logger.confusion_meter.value().flatten(), precision=3))
-                except ValueError:
-                    print('error with loss meter')
-                    pass
-                except IndexError:
-                    if self.net.epoch == 0:
-                        print(
-                            '1 sample will not be included in the logged class errors.')
+                # ten_x.requires_grad = True
+
+                output_image, output_classifier, output_single_class = self.net(
+                    ten_x)  # net output
+                if store_tseries:
+                    torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
+
+                if store_stats:
+                    means = output_image[:, 0, :].mean(
+                        dim=1).detach().cpu().numpy()
+                    stds = output_image[:, 0, :].std(dim=1).detach().cpu().numpy()
+                    maxs = output_image[:, 0, :].max(
+                        dim=1)[0].detach().cpu().numpy()
+                    combined_vals = np.asarray((means, stds, maxs)).T.tolist()
+
+                    self.logger.stats.extend(combined_vals)
+
+                if self.crop:
+                    ten_y, output_image = self.crop_target_output(
+                        self.crop, ten_y, output_image)
+
+
+                loss, periods = self.calc_loss(output_image, ten_y,
+                                               output_classifier, ten_y2, only_class, single_class=output_single_class)
+                loss = loss / self.acc_grad
+
+                if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test:
+                    class_result_single = output_classifier[:,
+                                                            0] - output_classifier[:, 1]
+                    pulsar_count = (0 > class_result_single).sum().to(torch.float)
+                    pulsar_fraction = pulsar_count / len(class_result_single)
+
+                    class_result = torch.FloatTensor(
+                        [self.test_frac, pulsar_fraction]).to(self.device)
+
+                    if self.no_reg:
+                        periods = torch.mean(periods).unsqueeze(0)
+                        # dummy_weights = torch.ones_like(periods)
+                    else:
+                        class_soft_max = F.softmax(output_classifier[:, :2])
+                        most_secure = torch.argmax(class_soft_max[:, 1])
+                        periods = output_classifier[most_secure, 2].unsqueeze(0)
+
+                    ten_y2 = ten_y2[:1]
+                    class_estimate = torch.cat(
+                        (class_result, periods)).unsqueeze(0)
+                    output_classifier = torch.cat(
+                        (class_result, periods), dim=0).unsqueeze(0)
+
+                else:
+
+                    if self.net.mode == 'dedisperse':
+                        dummy = torch.zeros((len(periods), 2)).to(self.device)
+                        dummy[:, 0] = 1
+                        class_estimate = torch.cat(
+                            (periods.float(), dummy), dim=1)
+                    else:
+                        class_estimate = output_classifier
+                if print_out:
+
+                    print(ten_y2)
+                    print(output_classifier)
+
+                if self.mode == 'train':
+
+                    loss.backward(retain_graph=True)
+                    if step % self.acc_grad == 0:
+
+                        self.net.optimizer.step()  # apply gradients
+                        self.net.optimizer.zero_grad()
+                # stack results for scatter plot
+                self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
+                                         ten_y2.detach().cpu().numpy().tolist(),
+                                         output_single_class.detach().cpu().numpy().tolist())
+
+                if not self.net.mode == 'dedisperse':
+                    # if not self.mode == 'train':
+                        # self.logger.stack_output(output_classifier.detach().cpu().numpy().tolist(),
+                        #                          ten_y2.detach().cpu().numpy().tolist())
+                    try:
+                        self.logger.classerr.add(
+                            output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
+                        self.logger.confusion_meter.add(
+                            output_classifier[:, :2].detach().cpu(), torch.fmod(ten_y2[:, 2],2).detach().cpu())
+                        # print(np.array2string(self.logger.confusion_meter.value().flatten(), precision=3))
+                    except ValueError:
+                        print('error with loss meter')
+                        pass
+                    except IndexError:
+                        if self.net.epoch == 0:
+                            print(
+                                '1 sample will not be included in the logged class errors.')
+
+                if self.net.epoch >= 2 and self.train_loader.dataset.set_based and self.relabel_set:
+                    if batch_loop==0:
+                        self.relabel_set_no_cand(ten_y2, output_classifier)
+                    else:
+                        self.relabel_set_no_cand(ten_y2, output_classifier, reverse=True)
 
         if self.net.mode == 'dedisperse':
             final_loss = self.logger.loss_meter_3.value()[0]
@@ -187,14 +215,37 @@ class trainer():
         if not self.net.mode == 'dedisperse':
             self.logger.conf_mat[mode] = np.copy(
                 self.logger.confusion_meter.conf)
+
+        if mode=='train':
+            train_output = np.asarray(self.logger.out_stack[2:])
+            train_target = np.asarray(self.logger.target_stack[2:])
+            self.logger.confusion_meter.reset()
+            sim_indices = (train_target[:, 2] != 3)!=0
+            # print(train_target[:,2])
+            # print(train_output)
+            # print(train_output[:,2]/train_target[:,0])
+            # print(train_target[:, 8])
+            if any(sim_indices):
+                self.logger.confusion_meter.add(
+                                torch.Tensor(train_output[sim_indices, :2]), torch.fmod(torch.Tensor(train_target[sim_indices, 2]),2))
+                self.logger.conf_mat_split['train sim'] = np.copy(
+                    self.logger.confusion_meter.conf)
+            self.logger.confusion_meter.reset()
+            real_indices = (train_target[:, 2] != 1)!=0
+            if any(real_indices):
+                self.logger.confusion_meter.add(
+                                torch.Tensor(train_output[real_indices, :2]), np.fmod(torch.Tensor(train_target[real_indices, 2]),2))
+                self.logger.conf_mat_split['train real'] = np.copy(
+                    self.logger.confusion_meter.conf)
+
         return final_loss
 
     def set_mode(self, mode):
         # Chnage between training and validation mode
         self.mode = mode
-        self.logger.out_stack = [[1, 0, 0], [0, 1, 0]]
+        self.logger.out_stack = [[1, 0, 0,0,0,0,0], [0, 1, 0, 0,0,0,0]]
         self.logger.out_single_stack = []
-        self.logger.target_stack = [[0, 0, 0, -1, 0, 0], [0, 0, 1, -1, 0, 0]]
+        self.logger.target_stack = [[0, 0, 0, -1, 0, 0,0,0,0], [0, 0, 1, -1, 0, 0,0,0,0]]
         # if not self.no_reg:
         #     self.logger.out_stack = [[0, 1, 0,0], [0, 0, 1,0]]
         #     self.logger.target_stack = [[0, 0, 0, -1,0], [0, 0, 1, -1,0]]
@@ -550,3 +601,67 @@ class trainer():
                               padding=padding, groups=tensor.shape[0])
 
         return tensor_acf
+
+    def relabel_set_no_cand(self, target, output_labels, reverse=False):
+
+        # print(target.shape, output_labels.shape)
+        target_nosim = target[target[:,2]!=1]
+        output_labels = output_labels[target[:,2]!=1]
+        softmaxed_ini = F.softmax(output_labels[:,:2], 1)
+
+        periods = output_labels[:,2].detach()
+        target_output_labels = target_nosim[:,2]
+
+        # cand_index = target_nosim[:, 7]
+        obs_index_ini = target_nosim[:, 6]
+        # obs_index = obs_index_ini[target_output_labels!=1]
+        # softmaxed = softmaxed_ini[target_output_labels!=1]
+
+        # obs_index_psrcand = obs_index_ini[cand_index==1]
+        # softmax_psrcand = softmaxed_ini[cand_index==1]
+        # periods_psrcand = periods[cand_index==1]
+
+        # obs_index_cand = obs_index_ini[cand_index==0]
+        # softmax_cand = softmaxed_ini[cand_index==0]
+        # periods_cand = periods[cand_index==0]
+
+        if not reverse:
+            threshold = 0.95
+            identified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold].cpu().numpy().astype(int)
+            identified_periods = periods[softmaxed_ini[:,1]>threshold].cpu().numpy()
+            if self.mode =='train':
+                label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
+                period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
+                for (psr, new_period) in zip(identified_psrs, identified_periods):
+                    self.train_loader.dataset.noise_df.iat[psr, label_index] = 5
+                    old_period = self.train_loader.dataset.noise_df.iat[psr, period_index]
+
+                    self.train_loader.dataset.noise_df.iat[psr, period_index] = new_period
+
+
+#reverse and validation not implemented... yet still true=
+            if self.mode =='validation':
+                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
+                for psr in identified_psrs:
+                    self.valid_loader.dataset.noise_df.iat[psr, label_index] = 5
+                    # print('relabelled sth')
+
+        if not reverse:
+            threshold_non = 0.5
+            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]<threshold_non].cpu().numpy().astype(int)
+        else:
+            threshold_non = 0.5
+            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold_non].cpu().numpy().astype(int)
+        if self.mode =='train':
+            for nonpsr in nonidentified_psrs:
+                label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
+                period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
+                self.train_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
+                self.train_loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
+                # print('relabelled sth')
+
+        if self.mode =='validation':
+            for nonpsr in nonidentified_psrs:
+                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
+                self.valid_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
+                # print('relabelled sth')

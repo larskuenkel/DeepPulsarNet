@@ -10,12 +10,20 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
                   snr_range=[0, 0], test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0, 0), shuffle_valid=True, val_test=False, df_val_test=None, kfold=-1,
                   dmsplit=False, net_out=1, dm_range=[0, 2000], dm_overlap=0.25, set_based=False, sim_prob=0.5):
         # Create train and validation loader
+
+    if set_based:
+        sim_samples = 0
+        obs_samples = samples
+    else:
+        sim_samples = samples
+        obs_samples = 0
+
     if df_val_test is None:
-        df = load_csv(csv_file, samples, snr_range, dm_range)
+        df = load_csv(csv_file, sim_samples, snr_range, dm_range)
     else:
         df = df_val_test
 
-    df_noise = load_csv(csv_noise, 0, noise_set=True)
+    df_noise = load_csv(csv_noise, obs_samples, noise_set=True)
 
     df_noise_noise = df_noise[df_noise['Label'] == 2]
     df_noise_psr = df_noise[df_noise['Label'] == 3]

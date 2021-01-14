@@ -62,6 +62,7 @@ class logger():
         self.conf_val[0] = 2
         self.conf_val[1] = -1
         self.conf_mat = {'train':[0], 'validation':[0], 'test':[0]}
+        self.conf_mat_split = {'train sim':[0], 'train real':[0]}
         #self.conf_mat = OrderedDict([('train',[0]), ('validation',[0]), ('test',[0])])
         self.best_ffa_values = np.zeros(2)
         self.best_ffa_values[1] = 100
@@ -98,6 +99,7 @@ class logger():
     def log_loss(self, epoch, lr, noise, loss_train, loss_valid, loss_test, reg_loss_train, 
                                   clas_loss_train, im_loss_train, reg_loss, clas_loss, im_loss):
         conf_string = ''
+        conf_string_split = ''
         mat_string = ''
         if len(self.conf_mat['train']) >1:
             conf_string = 'MCC: '
@@ -106,19 +108,39 @@ class logger():
                     mat_dict = conv_mat_to_dict(self.conf_mat[mode])
                     pycm_cm = pycm.ConfusionMatrix(matrix=mat_dict)
                     mcc = pycm_cm.MCC['pulsar']
+                    if mode == 'train':
+                        self.last_train_mcc = mcc if not mcc == 'None' else 0
                     if mode == 'validation':
                         self.last_val_mcc = mcc if not mcc == 'None' else 0
                     if mode == 'test':
                         self.last_test_mcc = mcc
+
                     if mcc == 'None':
                         mcc_string = 'nan  |'
                     else:
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string += ' ' + mcc_string + ''
+
+            conf_string_split = 'Split: '
+            for mode in self.conf_mat_split:
+                if len(self.conf_mat_split[mode])>1:
+                    mat_dict = conv_mat_to_dict(self.conf_mat_split[mode])
+                    pycm_cm = pycm.ConfusionMatrix(matrix=mat_dict)
+                    mcc = pycm_cm.MCC['pulsar']
+                    if mode == 'train sim':
+                        self.last_train_mcc_sim = mcc if not mcc == 'None' else 0
+                    if mode == 'train real':
+                        self.last_train_mcc_real = mcc if not mcc == 'None' else 0
+
+                    if mcc == 'None':
+                        mcc_string = 'nan  |'
+                    else:
+                        mcc_string = "{:.2f}".format(mcc)+ ' |'
+                    conf_string_split += ' ' + mcc_string + ''
         if loss_test is None:
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| {} Time: {:.2f}'.format(
-                epoch, lr, loss_train, loss_valid,
-                                  clas_loss_train, im_loss_train, clas_loss, im_loss, conf_string, self.time_meter.value()))
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f} {:.6f}||{:.6f} {:.6f} {:.6f}| {} |{}|Time: {:.2f}'.format(
+                epoch, lr, loss_train, loss_valid, reg_loss_train, 
+                                  clas_loss_train, im_loss_train, reg_loss, clas_loss, im_loss, conf_string,conf_string_split,  self.time_meter.value()))
             # self.last_val_mcc = 0
         else:
             if np.count_nonzero(self.confusion_meter.value()) != 0:
@@ -133,15 +155,15 @@ class logger():
                         self.conf_val[1] = float(mcc)
                 # conf_string += ' ' + \
                 #     np.array2string(conf_val, precision=2, floatmode='fixed')
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} [{}] Time: {:.2f}'.format(
-                epoch, lr, loss_train, loss_valid, 
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f} {:.6f}||{:.6f} {:.6f} {:.6f}| Test: {:.5f} {} [{}] Time: {:.2f}'.format(
+                epoch, lr, loss_train, loss_valid, reg_loss_train, 
                                   clas_loss_train, im_loss_train,
-                                  clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
-        self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc])
+                                  reg_loss, clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
+        self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc, self.last_train_mcc, self.last_train_mcc_sim])
         #print(np.nansum((reg_loss, clas_loss)))
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
-            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.5f} {} {} {}".format(
-                epoch, noise[0], loss_train, loss_valid, clas_loss, im_loss, loss_test, conf_string, mat_string))
+            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.6f} {:.5f} {} {} {} {}".format(
+                epoch, noise[0], loss_train, loss_valid, reg_loss, clas_loss, im_loss, loss_test, conf_string, conf_string_split, mat_string))
 
     def log_command(self, command):
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:

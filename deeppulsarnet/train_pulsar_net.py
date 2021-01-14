@@ -143,6 +143,10 @@ def main():
                         help='Cycle through the whole observation set during one epoch and add random simulations.')
     parser.add_argument('--sim_prob', type=float, default=0.5,
                         help='Simulation probability when set_based is used.')
+    parser.add_argument('--relabel_set', action='store_true',
+                        help='Correct labels in the observation set when the network thinks it sees a pulsar.')
+    parser.add_argument('--reverse_batch', action='store_true',
+                        help='Reverse batch after each batch and try to predict negative.')
 
     args = parser.parse_args()
 
@@ -346,7 +350,8 @@ def main():
                                 test_frac=args.test_samples[
                                     1],
                                 acc_grad=args.acc_grad,
-                                loss_pool_mse=args.loss_pool_mse)
+                                loss_pool_mse=args.loss_pool_mse,
+                                relabel_set=args.relabel_set)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
@@ -360,7 +365,8 @@ def main():
         train_net.net.save_epoch(epoch)
         train_net.logger.epoch = epoch
         loss_train = train_net.run(
-            'train', args.loops, only_class=args.no_reg, print_progress=args.progress)
+            'train', args.loops, only_class=args.no_reg, print_progress=args.progress,
+            reverse_batch=args.reverse_batch)
         reg_loss_train = train_net.logger.loss_meter.value()[0]
         clas_loss_train = train_net.logger.loss_meter_2.value()[0]
         im_loss_train = train_net.logger.loss_meter_3.value()[0]
@@ -411,6 +417,19 @@ def main():
         # if train_net.net.mode=='full' or train_net.net.mode=='classifier':
         #     if not class_ok and epoch % 1 == 0 and len(train_net.net.classifiers):
         #         class_ok = train_net.check_classifier()
+        if args.relabel_set:
+            try:
+                psr_in_train = train_net.train_loader.dataset.noise_df['Label'].value_counts().loc[5]
+            except KeyError:
+                psr_in_train = 0
+            try:
+                psr_in_val = train_net.valid_loader.dataset.noise_df['Label'].value_counts().loc[5]
+            except:
+                psr_in_val = 0
+            print(f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}")
+            train_net.train_loader.dataset.noise_df.to_csv(f'./results/train_{args.name}.csv')
+            if valid_loader is not None:
+                train_net.valid_loader.dataset.noise_df.to_csv(f'./results/valid_{args.name}.csv')
 
         if epoch % 1 == 0 and args.ffa_test != '':
             # ffa_count, non_detec, csv_ffa = ffa_test_whole_perf.main(

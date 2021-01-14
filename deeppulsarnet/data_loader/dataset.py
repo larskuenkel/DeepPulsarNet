@@ -114,11 +114,19 @@ class FilDataset(data_utils.Dataset):
                 target_file = ''
             noise_file_index = idx
 
+        labels = np.append(labels, noise_file_index)
+
         if self.dmsplit:
             dm_indexes = check_range(self.dm_ranges, labels[1])
         else:
             dm_indexes = [0]
             self.net_out = 1
+
+        if len(dm_indexes)<1:
+            labels = np.append(labels, -1)
+        else:
+            labels = np.append(labels, dm_indexes[0])
+
         noisy_data, orig_data = load_filterbank(
             sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
                 1], down_factor=self.down_factor,
