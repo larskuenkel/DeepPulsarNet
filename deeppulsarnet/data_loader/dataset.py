@@ -147,6 +147,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
                     dmsplit=False, dm_indexes=0, net_out=1):
         # Load filterbank from disk with sigpyproc
     # print(file, noise, down_factor)
+    # print(target_file)
     if not test:
         if not (pd.isna(file) or file == ''):
             current_file = reader(file)
@@ -200,7 +201,9 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
         enc_down = int(length / down_factor)
         if target_file != '' and not pd.isna(file):
             current_target = np.load(target_file)
-            current_target = current_target // down_factor
+            max_length = current_target.shape[0] - current_target.shape[0]%down_factor
+            current_target = current_target[:max_length].reshape(-1, down_factor).max(1)
+
             # print(current_target.shape, down_factor)
             start_down = int(start / down_factor)
             # if shift:
