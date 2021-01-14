@@ -95,6 +95,7 @@ class trainer():
 
                 # ten_x.requires_grad = True
 
+                self.net.ini_target = ten_y2
                 output_image, output_classifier, output_single_class = self.net(
                     ten_x)  # net output
                 if store_tseries:

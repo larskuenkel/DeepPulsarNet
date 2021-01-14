@@ -147,6 +147,8 @@ def main():
                         help='Correct labels in the observation set when the network thinks it sees a pulsar.')
     parser.add_argument('--reverse_batch', action='store_true',
                         help='Reverse batch after each batch and try to predict negative.')
+    parser.add_argument('--class_weight', type=float, nargs=2,
+                        default=[1,1], help='Weight of the classes.')
 
     args = parser.parse_args()
 
@@ -256,6 +258,7 @@ def main():
         net.set_mode(args.mode)
         example_shape = net.input_shape
         example_shape_altered = example_shape
+        net.create_loss_func(args.class_weight)
 
         if args.overwrite_length:
             new_length = args.length
@@ -315,7 +318,7 @@ def main():
                          clamp=args.clamp, gauss=args.gauss,
                          cmask=args.cmask, rfimask=args.rfimask, dm0_class=args.dm0_class,
                          class_configs=args.class_configs, data_resolution=data_resolution,
-                         crop=args.crop, edge=args.edge).to(device)
+                         crop=args.crop, edge=args.edge, class_weight=args.class_weight).to(device)
         net.edge = train_loader.dataset.edge
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)

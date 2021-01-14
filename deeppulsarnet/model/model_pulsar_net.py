@@ -27,7 +27,7 @@ class pulsar_net(nn.Module):
                  gauss=(27, 15 / 4, 1, 1),
                  cmask=False, rfimask=False, 
                  dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
-                 edge=[0,0]):
+                 edge=[0,0], class_weight=[1,1]):
         super().__init__()
 
         print('Creating neural net.')
@@ -93,7 +93,7 @@ class pulsar_net(nn.Module):
 
         self.create_classifier_levels(class_configs, no_reg, dm0_class=dm0_class)
 
-        self.create_loss_func()
+        self.create_loss_func(class_weight)
 
         self.freeze = 0
         # (int(111 / self.down_fac), int(15 / self.down_fac))
@@ -301,7 +301,7 @@ class pulsar_net(nn.Module):
             return input, classifier_output_multi, class_tensor
         return input, class_tensor[:, 0, :], torch.empty(0, requires_grad=True)
 
-    def reset_optimizer(self, lr, decay=0, freeze=0, init=0, ada=False):
+    def reset_optimizer(self, lr, decay=0, freeze=0, init=0):
 
         # self.freeze = freeze
         if init:
@@ -349,19 +349,12 @@ class pulsar_net(nn.Module):
             for classifier in self.classifiers:
                 parameters += list(classifier.parameters())
                 self.frozen = 1
-
-        if not ada:
-            if freeze <= 0:
-                self.optimizer = optim.Adam([{'params': encoder_params, 'lr': learn_rate_2},
-                                             {'params': class_params, 'lr': learn_rate_1}], lr=learn_rate_1, weight_decay=decay)
-            else:
-                self.optimizer = optim.Adam(
-                    parameters, lr=learn_rate_1, weight_decay=decay)
+        if freeze <= 0:
+            self.optimizer = optim.Adam([{'params': encoder_params, 'lr': learn_rate_2},
+                                         {'params': class_params, 'lr': learn_rate_1}], lr=learn_rate_1, weight_decay=decay)
         else:
-            print('AdaBound not used currently.')
-            # self.optimizer = adabound.AdaBound(
-            #     parameters, lr=learn_rate_1, final_lr=0.1, weight_decay=decay)
-
+            self.optimizer = optim.Adam(
+                parameters, lr=learn_rate_1, weight_decay=decay)
         min_lr = learn_rate_1 / 100
 
         # print(parameters)
@@ -381,7 +374,7 @@ class pulsar_net(nn.Module):
             self.optimizer, patience=3, factor=0.5)
 
 
-    def create_loss_func(self, focal=0):
+    def create_loss_func(self, class_weight=[1,1]):
         # if not self.binary:
         #     self.loss_autoenc = nn.MSELoss()
         # else:
@@ -391,11 +384,11 @@ class pulsar_net(nn.Module):
         # self.loss_autoenc = nn.BCEWithLogitsLoss()
         # out_length = int(self.input_shape[1]/4 -self.crop*2)
         # # self.loss_autoenc = nn.BCEWithLogitsLoss(pos_weight=torch.full((1, out_length), self.bce_weight))
-        self.loss_autoenc = nn.MSELoss()
+        self.loss_autoenc = nn.MSELoss().to(next(self.parameters()).device)
         # self.loss_autoenc = nn.BCELoss()
 
-        self.loss_1 = nn.MSELoss(reduction='sum')
-        self.loss_2 = nn.CrossEntropyLoss()
+        self.loss_1 = nn.MSELoss(reduction='sum').to(next(self.parameters()).device)
+        self.loss_2 = nn.CrossEntropyLoss(weight=torch.Tensor(class_weight)).to(next(self.parameters()).device)
 
     def gauss_smooth(self, tensor):
         self.gaussian_kernel = self.gaussian_kernel.to(tensor.device)
