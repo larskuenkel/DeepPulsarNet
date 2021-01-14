@@ -66,7 +66,7 @@ def main():
     #                     help='Use bandpass.npy to make the signal more realistic.')
     parser.add_argument('--threshold', type=float, default=[0.1, 0, 2], nargs=3,
                         help='Increase the noise when loss drops below this value.\
-                        [Value, added value with noise, which metric]')
+                        [Value, added value with noise, which metric (0:total loss, 1: classification loss, 2: mcc)]')
     parser.add_argument('--mode', type=str, default='full',
                         help='Set mode of training. Possible: dedisperse, full, classifier.')
     parser.add_argument('--freeze', type=int, default=-1,

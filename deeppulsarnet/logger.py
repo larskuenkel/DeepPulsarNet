@@ -62,7 +62,7 @@ class logger():
         self.conf_val[0] = 2
         self.conf_val[1] = -1
         self.conf_mat = {'train':[0], 'validation':[0], 'test':[0]}
-        self.conf_mat_split = {'train sim':[0], 'train real':[0]}
+        self.conf_mat_split = {'train sim':[0], 'train real':[0], 'valid sim':[0], 'valid real':[0]}
         #self.conf_mat = OrderedDict([('train',[0]), ('validation',[0]), ('test',[0])])
         self.best_ffa_values = np.zeros(2)
         self.best_ffa_values[1] = 100
@@ -131,6 +131,10 @@ class logger():
                         self.last_train_mcc_sim = mcc if not mcc == 'None' else 0
                     if mode == 'train real':
                         self.last_train_mcc_real = mcc if not mcc == 'None' else 0
+                    if mode == 'valid sim':
+                        self.last_valid_mcc_sim = mcc if not mcc == 'None' else 0
+                    if mode == 'valid real':
+                        self.last_valid_mcc_real = mcc if not mcc == 'None' else 0
 
                     if mcc == 'None':
                         mcc_string = 'nan  |'
@@ -138,6 +142,9 @@ class logger():
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string_split += ' ' + mcc_string + ''
         if loss_test is None:
+            if epoch==0:
+                print(f"Epoch Count | Loss Rate  | Total Loss         Split Loss:|Train (class&MSE)||Valid(class&MSE) | MCC   Train  Valid      Train(Sim   Real) Valid(Sim   Real)")
+                        # Epoch:  32 LR: 0.000500000 Train: 0.19716 Valid: 0.16227 |0.106255 0.090906||0.111256 0.051013| MCC:  0.53 | 0.75 | |Split:  0.53 | 0.68 ||Time: 26.37
             print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| {} |{}|Time: {:.2f}'.format(
                 epoch, lr, loss_train, loss_valid, 
                                   clas_loss_train, im_loss_train, clas_loss, im_loss, conf_string,conf_string_split,  self.time_meter.value()))
@@ -159,7 +166,7 @@ class logger():
                 epoch, lr, loss_train, loss_valid,  
                                   clas_loss_train, im_loss_train,
                                   clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
-        self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc, self.last_train_mcc, self.last_train_mcc_sim])
+        self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc, self.last_train_mcc, self.last_train_mcc_sim, self.last_valid_mcc_sim])
         #print(np.nansum((reg_loss, clas_loss)))
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
             myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.5f} {} {} {} {}".format(

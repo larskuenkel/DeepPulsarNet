@@ -216,26 +216,29 @@ class trainer():
             self.logger.conf_mat[mode] = np.copy(
                 self.logger.confusion_meter.conf)
 
-        if mode=='train':
-            train_output = np.asarray(self.logger.out_stack[2:])
-            train_target = np.asarray(self.logger.target_stack[2:])
+        # Split mcc into real pulsars and fake pulsars during training
+        if mode=='train' or mode=='validation':
+            if mode=='train':
+                sim_string = 'train sim'
+                real_string = 'train real'
+            else:
+                sim_string = 'valid sim'
+                real_string = 'valid real'
+            epoch_output = np.asarray(self.logger.out_stack[2:])
+            epoch_target = np.asarray(self.logger.target_stack[2:])
             self.logger.confusion_meter.reset()
-            sim_indices = (train_target[:, 2] != 3)!=0
-            # print(train_target[:,2])
-            # print(train_output)
-            # print(train_output[:,2]/train_target[:,0])
-            # print(train_target[:, 8])
+            sim_indices = ((epoch_target[:, 2] != 3)&(epoch_target[:, 2] != 5))!=0
             if any(sim_indices):
                 self.logger.confusion_meter.add(
-                                torch.Tensor(train_output[sim_indices, :2]), torch.fmod(torch.Tensor(train_target[sim_indices, 2]),2))
-                self.logger.conf_mat_split['train sim'] = np.copy(
+                                torch.Tensor(epoch_output[sim_indices, :2]), torch.fmod(torch.Tensor(epoch_target[sim_indices, 2]),2))
+                self.logger.conf_mat_split[sim_string] = np.copy(
                     self.logger.confusion_meter.conf)
             self.logger.confusion_meter.reset()
-            real_indices = (train_target[:, 2] != 1)!=0
+            real_indices = (epoch_target[:, 2] != 1)!=0
             if any(real_indices):
                 self.logger.confusion_meter.add(
-                                torch.Tensor(train_output[real_indices, :2]), np.fmod(torch.Tensor(train_target[real_indices, 2]),2))
-                self.logger.conf_mat_split['train real'] = np.copy(
+                                torch.Tensor(epoch_output[real_indices, :2]), np.fmod(torch.Tensor(epoch_target[real_indices, 2]),2))
+                self.logger.conf_mat_split[real_string] = np.copy(
                     self.logger.confusion_meter.conf)
 
         return final_loss
@@ -308,33 +311,20 @@ class trainer():
             else:
                 if epoch - self.last_noise_update >= patience:
                     if self.threshold[2] == 2:
+                        # use mcc of validation simulations
                         test_vals = 1 - np.asarray(
-                            self.logger.values[-patience:])[:, 5]
+                            self.logger.values[-patience:])[:, 8]
                     elif self.threshold[2] == 1:
+                        # use clas loss
                         test_vals = np.asarray(
                             self.logger.values[-patience:])[:, 3]
                     else:
+                        # use loss
                         test_vals = np.asarray(
                             self.logger.values[-patience:])[:, 2]
-                    # print(test_vals)
-                    # and np.argmin(test_vals[::-1]) != 0:
+
                     if np.all(test_vals < current_threshold):
-                        # if self.net.enc_layer != len(self.net.encoder_channels) or self.net.freeze != 0:
-                            # if self.net.freeze == 0:
-                            #     new_layers = self.net.enc_layer + 1
-                            #     self.net.set_layer(new_layers)
-                            #     print(
-                            #         f'Added one layer to training and froze previous layers. Threshold: {current_threshold * freeze_factor_val }')
-                            #     new_freeze = new_layers - 1
-                            # else:
-                            #     new_freeze = 0
-                            #     print(
-                            #         f'Unfroze layers. Threshold: {current_threshold / freeze_factor_val }')
-                            # self.last_noise_update = epoch
-                            # # self.net.reset_optimizer(
-                            # #     self.lr, decay, new_freeze, init=1)
-                            # self.logger.reset_best_values()
-                        # else:
+
                         if current_noise < self.noise[1]:
                             if name:
                                 torch.save(self.net,
