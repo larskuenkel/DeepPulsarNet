@@ -341,7 +341,7 @@ class trainer():
                                                        self.noise[0] + self.noise[2] * 2)), new_threshold))
                             self.last_noise_update = epoch
                             self.net.reset_optimizer(
-                                self.lr, decay, freeze, ada=ada)
+                                self.lr, decay, freeze)
                             self.net.save_noise(self.noise[:])
                             self.logger.reset_best_values()
                         # for child in self.net.modules():
