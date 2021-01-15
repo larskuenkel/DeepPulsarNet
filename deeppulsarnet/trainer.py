@@ -291,8 +291,7 @@ class trainer():
         # Update the noise when the loss was under the threshold for some time
 
         # if self.net.mode=='full' or self.net.mode=='classifier':
-        #     if not self.class_ok == 1 and epoch % 1 == 0 and
-         len(self.net.classifiers) > 1:
+        #     if not self.class_ok == 1 and epoch % 1 == 0 and len(self.net.classifiers) > 1:
         #         self.class_ok = self.check_classifier()
         self.class_ok = 1
 
