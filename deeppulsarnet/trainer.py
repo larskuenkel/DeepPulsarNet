@@ -308,7 +308,7 @@ class trainer():
                 self.threshold[0] + self.noise[0] * noise_factor)
             if freeze == 0 or (freeze < 0 and self.net.frozen):
                 self.net.reset_optimizer(
-                    self.lr, decay, freeze, ada=ada)
+                    self.lr, decay, freeze)
             else:
                 if epoch - self.last_noise_update >= patience:
                     if self.threshold[2] == 2:
