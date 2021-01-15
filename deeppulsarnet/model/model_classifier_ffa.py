@@ -107,7 +107,7 @@ class Height_conv(nn.Module):
             return output
 
 
-class regressor_ffa(nn.Module):
+class classifier_ffa(nn.Module):
     def __init__(self, input_resolution, no_reg=True, dm0_class=False,
         pooling=1, nn_layers=2, channels=8, kernel=11, norm=True, use_ampl=False, pytorch_ffa=False,
         min_period=0.09, max_period=1.1, bins_min=20, bins_max=25, remove_threshold=True, name=''):

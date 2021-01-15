@@ -154,7 +154,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
     return out_stft
 
 
-class regressor_stft_comb(nn.Module):
+class classifier_stft(nn.Module):
     def __init__(self, input_length, input_resolution, height_dropout=0, norm=0, harmonics=4, nn_layers=2,
                  stft_count=1, dm0_class=False, crop_factor=0.8, channels=8,
                  kernel=11, name='', harmonic_downsample=False):

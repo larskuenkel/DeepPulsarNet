@@ -149,6 +149,12 @@ def main():
                         help='Reverse batch after each batch and try to predict negative.')
     parser.add_argument('--class_weight', type=float, nargs=2,
                         default=[1,1], help='Weight of the classes.')
+    parser.add_argument('--added_cands', type=int, 
+                        default=0, help='Number of additional candidates per file per classifier.')
+    parser.add_argument('--psr_cands', action='store_true',
+                        help='Also use a candidate at the position of the pulsar period during training.')
+    parser.add_argument('--cands_threshold', type=float,
+                        default=0, help='Threshold under which candidates are filtered.')
 
     args = parser.parse_args()
 
@@ -318,7 +324,9 @@ def main():
                          clamp=args.clamp, gauss=args.gauss,
                          cmask=args.cmask, rfimask=args.rfimask, dm0_class=args.dm0_class,
                          class_configs=args.class_configs, data_resolution=data_resolution,
-                         crop=args.crop, edge=args.edge, class_weight=args.class_weight).to(device)
+                         crop=args.crop, edge=args.edge, class_weight=args.class_weight,
+                         added_cands=args.added_cands, psr_cands=args.psr_cands,
+                         cands_threshold=args.cands_threshold).to(device)
         net.edge = train_loader.dataset.edge
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)

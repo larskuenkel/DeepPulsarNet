@@ -95,9 +95,9 @@ class trainer():
 
                 # ten_x.requires_grad = True
 
-                self.net.ini_target = ten_y2
+                # self.net.ini_target = ten_y2
                 output_image, output_classifier, output_single_class = self.net(
-                    ten_x)  # net output
+                    ten_x, ten_y2)  # net output
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
 
@@ -287,7 +287,7 @@ class trainer():
         return tensor
 
 
-    def update_noise(self, epoch, name, decay, patience=3, ada=False, freeze=-1):
+    def update_noise(self, epoch, name, decay, patience=3, freeze=-1):
         # Update the noise when the loss was under the threshold for some time
 
         # if self.net.mode=='full' or self.net.mode=='classifier':
@@ -298,7 +298,7 @@ class trainer():
         if self.class_ok == 0:
             print('Resetting with frozen first part')
             self.net.reset_optimizer(
-                self.lr, decay, 1, ada=ada)
+                self.lr, decay, 1)
         else:
             current_noise = self.noise[0]
             noise_factor = self.threshold[1] if len(self.threshold) > 1 else 0

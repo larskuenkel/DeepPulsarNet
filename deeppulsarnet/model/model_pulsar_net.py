@@ -6,8 +6,9 @@ from model.model_encoder import pulsar_encoder
 from model.model_tcn_multi import TemporalConvNet_multi
 from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
-from model.model_regressor_ffa import regressor_ffa
-from model.model_regressor_stft import regressor_stft_comb
+from model.model_classifier_ffa import classifier_ffa
+from model.model_classifier_stft import classifier_stft
+from model.model_candidate_creator import candidate_creator
 from torch.utils.checkpoint import checkpoint
 import numpy as np
 import sys
@@ -27,7 +28,8 @@ class pulsar_net(nn.Module):
                  gauss=(27, 15 / 4, 1, 1),
                  cmask=False, rfimask=False, 
                  dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
-                 edge=[0,0], class_weight=[1,1]):
+                 edge=[0,0], class_weight=[1,1], added_cands=0, psr_cands=False,
+                 cands_threshold=0):
         super().__init__()
 
         print('Creating neural net.')
@@ -57,6 +59,17 @@ class pulsar_net(nn.Module):
 
         self.data_resolution = data_resolution
         self.output_resolution = data_resolution * self.down_fac
+
+        self.added_cands = added_cands
+        self.psr_cands = psr_cands
+        self.cands_threshold = 0
+
+        if self.added_cands or self.psr_cands:
+            self.candidate_creator = candidate_creator(added_cands=self.added_cands, psr_cands=self.psr_cands, 
+                candidate_threshold=self.candidate_threshold)
+            self.cand_based = True
+        else:
+            self.cand_based = False
 
         self.set_preprocess(self.input_shape, model_para.initial_norm,
                             bias=clamp[0], clamp=clamp[1:], dm0=model_para.subtract_dm0,
@@ -155,7 +168,7 @@ class pulsar_net(nn.Module):
 
             # if 'ffa' in self.class_mode:
             if class_para.class_type == 'ffa':
-                setattr(self, f"classifier_ffa{added}", regressor_ffa(self.output_resolution, no_reg=True, dm0_class=False,
+                setattr(self, f"classifier_ffa{added}", classifier_ffa(self.output_resolution, no_reg=True, dm0_class=False,
                                                                         pooling=class_para.pooling, nn_layers=class_para.nn_layers, channels=class_para.channels,
                                                                         kernel=class_para.kernel, norm=class_para.norm, use_ampl=class_para.only_use_amplitude,
                                                                         min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
@@ -167,7 +180,7 @@ class pulsar_net(nn.Module):
 
             # if 'stft_comb' in self.class_mode:
             if class_para.class_type == 'stft':
-                setattr(self, f"classifier_{class_para.name}", regressor_stft_comb(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
+                setattr(self, f"classifier_{class_para.name}", classifier_stft(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
                                                                                    harmonics=class_para.harmonics, nn_layers=class_para.nn_layers, stft_count=class_para.stft_count,
                                                                                    dm0_class=dm0_class, crop_factor=class_para.crop_factor, channels=class_para.channels,
                                                                                    kernel=class_para.kernel,
@@ -185,11 +198,11 @@ class pulsar_net(nn.Module):
         else:
             self.use_multi_class = 0
 
-    def forward(self, x):
+    def forward(self, x, target):
         # y = x - tile(self.pool(x)[:,:,:], 2, 1000)
         # x.requires_grad=False
         # return checkpoint(self.apply_net, x)
-        return self.apply_net(x)
+        return self.apply_net(x, target)
 
     def save_epoch(self, epoch):
         self.epoch = epoch
@@ -240,7 +253,7 @@ class pulsar_net(nn.Module):
             out = y
         return out
 
-    def apply_net(self, input):
+    def apply_net(self, input, target):
         # input = input.permute(0,2,1)
         # input = F.layer_norm(input, [input.shape[2]]).permute(0,2,1)
         # input = F.group_norm(input, 10).permute(0,2,1)
@@ -295,6 +308,8 @@ class pulsar_net(nn.Module):
         for classifier in self.classifiers:
             class_tensor[:, j, :] = classifier(input)
             j += 1
+            if self.cand_based:
+                pass
         if self.use_multi_class:
             classifier_output_multi = self.multi_class(
                 class_tensor)
