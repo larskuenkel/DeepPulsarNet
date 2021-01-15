@@ -66,7 +66,7 @@ class pulsar_net(nn.Module):
 
         if self.added_cands or self.psr_cands:
             self.candidate_creator = candidate_creator(added_cands=self.added_cands, psr_cands=self.psr_cands, 
-                candidate_threshold=self.candidate_threshold)
+                candidate_threshold=self.cands_threshold)
             self.cand_based = True
         else:
             self.cand_based = False
@@ -198,7 +198,7 @@ class pulsar_net(nn.Module):
         else:
             self.use_multi_class = 0
 
-    def forward(self, x, target):
+    def forward(self, x, target=None):
         # y = x - tile(self.pool(x)[:,:,:], 2, 1000)
         # x.requires_grad=False
         # return checkpoint(self.apply_net, x)
@@ -253,21 +253,9 @@ class pulsar_net(nn.Module):
             out = y
         return out
 
-    def apply_net(self, input, target):
-        # input = input.permute(0,2,1)
-        # input = F.layer_norm(input, [input.shape[2]]).permute(0,2,1)
-        # input = F.group_norm(input, 10).permute(0,2,1)
-        # if self.use_norm:
-        #     input = self.norm(input)
-
-        # input = torch.clamp(input, -5,5)
-        # input = input+0.1
-        # means = F.avg_pool2d(input, (14, 4001), stride=(1,1), padding=(0,2000))
-        # input -= means[:,0,:][:,None,:]
-
+    def apply_net(self, input, target=None):
         input = self.preprocess(input)
-        # if hasattr(self, 'encoder'):
-        #     input = self.encoder(input)
+
         encoded = self.calc_tcn_out(input)
         if self.crop:
             encoded = encoded[:, :, self.crop:-self.crop].contiguous()
@@ -278,7 +266,7 @@ class pulsar_net(nn.Module):
         j = 0
         encoded = self.output_layer(encoded)
         if self.mode == 'dedisperse':
-            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
+            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
 
         if hasattr(self, 'break_grad'):
             if self.break_grad:
@@ -293,28 +281,40 @@ class pulsar_net(nn.Module):
                 encoded_ = self.append_dm0(input, encoded_)
         for classifier in self.classifiers:
             # print(class_tensor.shape)
-            class_tensor[:, j, :] = classifier(encoded_)
-            j += 1
-        if self.use_multi_class:
-            classifier_output_multi = self.multi_class(
-                class_tensor)
-            return encoded, classifier_output_multi, class_tensor
-        return encoded, class_tensor[:, 0, :], torch.empty(0, requires_grad=True)
-
-    def apply_classifier(self, input):
-        class_tensor = torch.zeros(
-            (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
-        j = 0
-        for classifier in self.classifiers:
-            class_tensor[:, j, :] = classifier(input)
-            j += 1
+            class_tensor[:, j, :], class_data = classifier(encoded_)
             if self.cand_based:
-                pass
+                class_candidates, class_targets = self.candidate_creator(class_data, classifier.final_cands, target)
+                if j == 0:
+                    candidates = class_candidates
+                    cand_targets = class_targets
+                else:
+                    candidates = torch.cat((candidates, class_candidates), 0)
+                    cand_targets = torch.cat((cand_targets, class_targets), 0)
+            else:
+                candidates = torch.empty(0, requires_grad=True)
+                cand_targets = torch.empty(0, requires_grad=True)
+
+            j += 1
         if self.use_multi_class:
             classifier_output_multi = self.multi_class(
                 class_tensor)
-            return input, classifier_output_multi, class_tensor
-        return input, class_tensor[:, 0, :], torch.empty(0, requires_grad=True)
+            return encoded, classifier_output_multi, class_tensor, (candidates, cand_targets)
+        return encoded, class_tensor[:, 0, :], torch.empty(0, requires_grad=True), (candidates, cand_targets)
+
+    # def apply_classifier(self, input):
+    #     class_tensor = torch.zeros(
+    #         (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
+    #     j = 0
+    #     for classifier in self.classifiers:
+    #         class_tensor[:, j, :] = classifier(input, target)
+    #         j += 1
+    #         if self.cand_based:
+    #             pass
+    #     if self.use_multi_class:
+    #         classifier_output_multi = self.multi_class(
+    #             class_tensor)
+    #         return input, classifier_output_multi, class_tensor
+    #     return input, class_tensor[:, 0, :], torch.empty(0, requires_grad=True)
 
     def reset_optimizer(self, lr, decay=0, freeze=0, init=0):
 

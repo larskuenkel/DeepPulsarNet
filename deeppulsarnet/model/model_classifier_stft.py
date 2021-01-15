@@ -237,6 +237,9 @@ class classifier_stft(nn.Module):
         self.final = nn.Sequential(
             nn.Linear(final_channels, self.final_output))
 
+        self.final_cands = nn.Sequential(
+            nn.Linear(final_channels, self.final_output))
+
         if self.harmonics:
             self.final_combine = nn.AdaptiveMaxPool1d(1, return_indices=True)
 
@@ -295,12 +298,17 @@ class classifier_stft(nn.Module):
 
         output = self.final(out_pool_final)
 
-        output_freq = 1 / (max_pos_freq * self.fft_res + 0.0000001)
+        output_period = 1 / (max_pos_freq * self.fft_res + 0.0000001)
         #output_freq = output_freq.clamp(0, 5)
         #output_freq = torch.ones((x.shape[0], 1)).to(x.device)
-        output = torch.cat((output, output_freq), dim=1)
+        output = torch.cat((output, output_period), dim=1)
         # print(output_freq)
-        return output
+
+        periods = torch.arange(out_conv.shape[2], dtype=torch.float).to(out_conv.device)
+        periods[0] = 0.001
+        periods = 1/(periods*self.fft_res)
+
+        return output, (out_conv, periods)
 
     def ini_conv(self, mean=0, std=1):
         for child in self.conv.modules():
@@ -312,6 +320,7 @@ class classifier_stft(nn.Module):
 
         final_para = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
         self.final[0].weight = final_para
+        self.final_cands[0].weight = final_para
         # self.final[0].weight[0,:] = - weight
         # self.final[0].weight[1,:] = + weight
 

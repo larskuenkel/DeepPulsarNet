@@ -130,3 +130,4 @@ deeppulsarnet/logs/**
 deeppulsarnet/trained_models/**
 deeppulsarnet/datasets/**
 log_training_runs.txt
+deeppulsarnet/process**

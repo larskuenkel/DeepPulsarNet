@@ -187,6 +187,7 @@ class classifier_ffa(nn.Module):
         self.glob_pool = nn.AdaptiveMaxPool3d(
                 (1, 1, 1), return_indices=True)
         self.final = nn.Sequential(nn.Linear(1, self.final_output))
+        self.final_cands = nn.Sequential(nn.Linear(1, self.final_output))
 
         self.ini_final()
 
@@ -220,7 +221,7 @@ class classifier_ffa(nn.Module):
         periods = ffa_periods[max_pos_period * position_factor]
         output = self.final(pooled[:, :, 0, 0, 0])
         output = torch.cat((output, periods.unsqueeze(1)), dim=1)
-        return output
+        return output, (out_conv[:,0,:,:,:], ffa_periods)
 
     def ini_conv(self, mean=0, std=1):
         for child in self.conv.modules():
@@ -232,6 +233,7 @@ class classifier_ffa(nn.Module):
 
         final_para = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
         self.final[0].weight = final_para
+        self.final_cands[0].weight = final_para
         # self.final[0].weight[0,:] = - weight
         # self.final[0].weight[1,:] = + weight
 

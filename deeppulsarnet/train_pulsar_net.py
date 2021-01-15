@@ -96,7 +96,8 @@ def main():
     # parser.add_argument('--shift', action='store_true',
     #                     help='Shift the target according to the DM. currently broken.')
     parser.add_argument('--loss_weights', type=float, nargs=4,
-                        default=(0.001, 0.001, 1, 1), help='Loss weights. [regression, classification, autoencoder, single_classifiers]')
+                        default=(0.001, 0.001, 1, 1, 1), help='Loss weights. [regression, classification, reconstruction, single_classifiers, candidates]\
+                        regression not used currently')
     parser.add_argument('--train_single', action='store_false',
                         help='Do not learn individual classifiers in multi class, only learn the combined result.')
     parser.add_argument('--gauss', type=float, nargs=4,

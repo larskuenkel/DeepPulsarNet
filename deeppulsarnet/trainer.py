@@ -9,7 +9,7 @@ import torch.nn.functional as F
 class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
-                 loss_weights=(0.001, 0.001, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
+                 loss_weights=(0.001, 0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
                  loss_pool_mse=False, bandpass=False, relabel_set =False):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -96,8 +96,8 @@ class trainer():
                 # ten_x.requires_grad = True
 
                 # self.net.ini_target = ten_y2
-                output_image, output_classifier, output_single_class = self.net(
-                    ten_x, ten_y2)  # net output
+                output_image, output_classifier, output_single_class, candidate_data = self.net(
+                    ten_x, target=ten_y2)  # net output
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
 
@@ -118,6 +118,10 @@ class trainer():
 
                 loss, periods = self.calc_loss(output_image, ten_y,
                                                output_classifier, ten_y2, only_class, single_class=output_single_class)
+
+                if candidate_data[0].shape[0]>1:
+                    cand_loss = self.calc_cand_loss(candidate_data)
+                    loss = loss + cand_loss
                 loss = loss / self.acc_grad
 
                 if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test:
@@ -570,6 +574,16 @@ class trainer():
             except TypeError:
                 loss_whole = None
         return loss_whole, periods
+
+    def calc_cand_loss(self, cand_data):
+
+        weight_factor = self.loss_weights[4]
+        output = cand_data[0]
+        target = torch.fmod(cand_data[1][:,2],2).long()
+
+        cand_loss = loss_2 = self.net.loss_2(output, target) * weight_factor
+
+        return cand_loss
 
     def estimate_period(self, tensor):
         conv_factor = 0.00064 * 4
