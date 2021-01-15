@@ -287,18 +287,19 @@ class trainer():
         return tensor
 
 
-    def update_noise(self, epoch, name, decay, patience=3, ada=False, freeze=-1):
+    def update_noise(self, epoch, name, decay, patience=3, freeze=-1):
         # Update the noise when the loss was under the threshold for some time
 
         # if self.net.mode=='full' or self.net.mode=='classifier':
-        #     if not self.class_ok == 1 and epoch % 1 == 0 and len(self.net.classifiers) > 1:
+        #     if not self.class_ok == 1 and epoch % 1 == 0 and
+         len(self.net.classifiers) > 1:
         #         self.class_ok = self.check_classifier()
         self.class_ok = 1
 
         if self.class_ok == 0:
             print('Resetting with frozen first part')
             self.net.reset_optimizer(
-                self.lr, decay, 1, ada=ada)
+                self.lr, decay, 1)
         else:
             current_noise = self.noise[0]
             noise_factor = self.threshold[1] if len(self.threshold) > 1 else 0
@@ -308,7 +309,7 @@ class trainer():
                 self.threshold[0] + self.noise[0] * noise_factor)
             if freeze == 0 or (freeze < 0 and self.net.frozen):
                 self.net.reset_optimizer(
-                    self.lr, decay, freeze, ada=ada)
+                    self.lr, decay, freeze)
             else:
                 if epoch - self.last_noise_update >= patience:
                     if self.threshold[2] == 2:
