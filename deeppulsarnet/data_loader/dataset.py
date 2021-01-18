@@ -143,7 +143,7 @@ class FilDataset(data_utils.Dataset):
 
 
 def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(1, 1, 1), edge=[0,0], start_val=2000, test=False,
-                    labels=0, enc_length=1875, down_factor=1, dm=0, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
+                    labels=[0,0,0], enc_length=1875, down_factor=1, dm=0, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
                     dmsplit=False, dm_indexes=0, net_out=1):
         # Load filterbank from disk with sigpyproc
     # print(file, noise, down_factor)
@@ -155,17 +155,17 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             current_data = current_file.readBlock(start, nsamps)
             orig_array = np.asarray(current_data)#.T
             data_array = orig_array
-            if nulling[0]:
-                if nulling[0] > 0:
-                    nulled_chunks = np.random.randint(nulling[0])
-                else:
-                    # For easier testing directly give chunk number
-                    nulled_chunks = - nulling[0]
-                for i in range(nulled_chunks):
-                    null_length = int(
-                        np.abs(np.random.normal(nulling[1], nulling[2])))
-                    null_start = int(np.random.randint(data_array.shape[1]))
-                    data_array[:, null_start:null_start + null_length] = 0
+            # if nulling[0]:
+            #     if nulling[0] > 0:
+            #         nulled_chunks = np.random.randint(nulling[0])
+            #     else:
+            #         # For easier testing directly give chunk number
+            #         nulled_chunks = - nulling[0]
+            #     for i in range(nulled_chunks):
+            #         null_length = int(
+            #             np.abs(np.random.normal(nulling[1], nulling[2])))
+            #         null_start = int(np.random.randint(data_array.shape[1]))
+            #         data_array[:, null_start:null_start + null_length] = 0
         if not pd.isna(noise) and noise_val != 0:
             current_noise_file = reader(noise)
             start_noise, nsamps = choose_start(
@@ -204,40 +204,18 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             max_length = current_target.shape[0] - current_target.shape[0]%down_factor
             current_target = current_target[:max_length].reshape(-1, down_factor).max(1)
 
-            # print(current_target.shape, down_factor)
             start_down = int(start / down_factor)
-            # if shift:
-            #     # shift shifts the target output according to the DM, still needs to work with data from different bandwidths
-            #     dm_shift = int(4.15 * 10**6 * (1396**-2 -
-            #                                    1443**-2) * dm / (0.64 * down_factor))
-            #     start_down -= dm_shift
 
             current_target = current_target[start_down: start_down + enc_down]
 
-            # target_array = np.asarray(current_target)[None, :]
-            # target_array = np.vstack((current_target,
-            #                         np.full(len(current_target), labels[0] - 1),
-            #                         np.full(len(current_target), labels[1] - 1))).astype('float32')
-            #orig_array /= np.max(orig_array)
-        # else:
-        #     target_array = np.zeros((1, enc_down), dtype='float32')
-            # target_array[:] = np.nan
-            # target_array[1:,:] = np.nan
             target_array = np.zeros((net_out, len(current_target)), dtype='float32')
             # print(dm_indexes, target_array.shape)
             for index in dm_indexes:
                 target_array[index, :] = current_target
-            # if len(dm_indexes):
-            #     plt.imshow(target_array[:,:500], aspect='auto')
-            #     plt.title(dm_indexes)
-            #     plt.show()
-
-            # target_array = np.vstack((current_target,
-            #                         np.full(len(current_target), labels[0] - 1),
-            #                         np.full(len(current_target), labels[1] - 1))).astype('float32')
-            #orig_array /= np.max(orig_array)
         else:
             target_array = np.zeros((net_out, enc_down), dtype='float32')
+            if labels[2] == 3 or labels[2] == 5:
+                target_array.fill(np.nan)
 
         # print(data_array.shape)
         if not edge[1] and not edge[0]:

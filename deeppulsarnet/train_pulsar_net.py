@@ -108,7 +108,7 @@ def main():
                         default=[5, 0.25], help='Samples that are used for the test classification \
                         and fraction that is needed for positive classification.')
     parser.add_argument('--nulling', type=float, nargs=8,
-                        default=[0, 0, 0, 0, 0, 0, 0, 0], help='Null a part of the training signal. [chunk_max, length, length deviation,\
+                        default=[0, 0, 0, 0, 0, 0, 0, 0], help='Null a part of the training signal. Not implemented currently .[chunk_max, length, length deviation,\
                         use_specaug_psr,use_specaug_combined,num,freq_para,time_para]')
     parser.add_argument('--use_val_as_test', action='store_true',
                         help='Use validation noise also for test set.')
