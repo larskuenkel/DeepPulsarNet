@@ -94,6 +94,10 @@ class pulsar_encoder(nn.Module):
             if out_channels != model_para.tcn_2_channels:
                 layers += [nn.Conv1d(out_channels, model_para.tcn_2_channels, 1),
                            nn.LeakyReLU()]
+        else:
+            if model_para.tcn_2_channels != model_para.encoder_channels[-1]:
+                layers += [nn.Conv1d(model_para.encoder_channels[-1], model_para.tcn_2_channels, 1),
+                           nn.LeakyReLU()]
 
         # if num_inputs != self.ini_channels:
         #     self.first_conv.add_module('downsample', nn.Conv1d(
