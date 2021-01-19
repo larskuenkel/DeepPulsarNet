@@ -483,30 +483,34 @@ class trainer():
                 except ValueError:
                     print('Error with loss meter.')
 
-            if self.fft_loss or self.acf_loss:
-                loss_whole_im = loss_whole_im * \
-                    np.max((0, 1 - self.fft_loss - self.acf_loss))
-            if self.fft_loss:
-                # print(self.fft_loss)
-                output_fft = self.net.classifier_fft.compute_fft(
-                    output_im_smooth, harmonics=0)[:, 0, :]
-                target_fft = self.net.classifier_fft.compute_fft(
-                    target_im, harmonics=0)[:, 0, :]
-                loss_fft = self.net.loss_autoenc(
-                    output_fft, target_fft)
-                loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
+                loss_whole = loss_whole_im * autoenc_factor
+            else:
+                loss_whole = None
 
-            if self.acf_loss:
-                acf_padding = 500
-                output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
-                    0, :, :] * self.acf_scale
-                target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
-                    0, :, :] * self.acf_scale
-                loss_acf = self.net.loss_autoenc(
-                    output_acf, target_acf)
-                loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
+            # if self.fft_loss or self.acf_loss:
+            #     loss_whole_im = loss_whole_im * \
+            #         np.max((0, 1 - self.fft_loss - self.acf_loss))
+            # if self.fft_loss:
+            #     # print(self.fft_loss)
+            #     output_fft = self.net.classifier_fft.compute_fft(
+            #         output_im_smooth, harmonics=0)[:, 0, :]
+            #     target_fft = self.net.classifier_fft.compute_fft(
+            #         target_im, harmonics=0)[:, 0, :]
+            #     loss_fft = self.net.loss_autoenc(
+            #         output_fft, target_fft)
+            #     loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
 
-            loss_whole = loss_whole_im * autoenc_factor
+            # if self.acf_loss:
+            #     acf_padding = 500
+            #     output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
+            #         0, :, :] * self.acf_scale
+            #     target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
+            #         0, :, :] * self.acf_scale
+            #     loss_acf = self.net.loss_autoenc(
+            #         output_acf, target_acf)
+            #     loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
+
+
         else:
             loss_whole = None
 
@@ -578,8 +582,8 @@ class trainer():
     def calc_cand_loss(self, cand_data):
 
         weight_factor = self.loss_weights[4]
-        output = cand_data[0]
-        target = torch.fmod(cand_data[1][:,2],2).long()
+        output = cand_data[0][:,:2]
+        target = torch.fmod(cand_data[2][:,2],2).long()
 
         cand_loss = loss_2 = self.net.loss_2(output, target) * weight_factor
 

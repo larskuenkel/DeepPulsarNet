@@ -29,6 +29,8 @@ class candidate_creator(nn.Module):
         x_repeated = x.repeat(num_cands, 1, 1, 1)
         if target is not None:
             target_repeated = target.repeat(num_cands, 1)
+        else:
+            target_repeated = torch.empty(0, requires_grad=True)
 
         ini_mask = torch.arange(x.shape[2]).reshape(1, 1, x.shape[2], 1).expand(
             x.shape[0], x.shape[1], -1, x.shape[3]).float().to(x.device)
@@ -64,7 +66,7 @@ class candidate_creator(nn.Module):
                 target_repeated = target_repeated[converted[:, 1]
                                                   > self.candidate_threshold, :]
 
-        if output.shape[0] > 0:
+        if output.shape[0] > 0 and target is not None:
             for i in range(output.shape[0]):
                 out_period = periods[i]
                 target_periods = target_repeated[i, 0]
@@ -72,6 +74,8 @@ class candidate_creator(nn.Module):
                     out_period.cpu(), target_periods.cpu())
                 if is_harmonic:
                     target_repeated[i, 2] = 1
+
+        output = torch.cat((output, periods.unsqueeze(1)), 1)
 
         return output, target_repeated
 

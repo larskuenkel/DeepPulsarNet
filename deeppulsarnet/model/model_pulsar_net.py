@@ -433,7 +433,7 @@ class pulsar_net(nn.Module):
         new_out = torch.cat((out_dedis, dm0_series), dim=1)
         return new_out
 
-    def test_single_file(self, noise_file, file='', noise=[0,0,0], start_val=2000,
+    def test_single_file(self, noise_file, target=None, file='', noise=[0,0,0], start_val=2000,
                          verbose=0, nulling=(0, 0, 0, 0, 0, 0, 0, 0)):
 
         if hasattr(self, 'edge'):
@@ -452,7 +452,7 @@ class pulsar_net(nn.Module):
         #     target_array, dtype=torch.float).unsqueeze(0).to(self.device))
         # plt.imshow(target[0,:,:], aspect='auto')
         # plt.show()
-        output_image, output_reg, output_single = self(data_tensor)
+        output_image, output_reg, output_single, cand_data = self(data_tensor, target=target)
         # loss = self.calc_loss(output_image_mask, ten_y_mask,
         #                           output_classifier, ten_y2)
         output = output_image.squeeze()
@@ -464,4 +464,4 @@ class pulsar_net(nn.Module):
             print(out_vals)
             print(output_single)
         # return loss
-        return output_image, output_reg, output_single
+        return output_image, output_reg, output_single, cand_data
