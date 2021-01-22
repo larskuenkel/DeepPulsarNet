@@ -583,7 +583,7 @@ class trainer():
 
         weight_factor = self.loss_weights[4]
         output = cand_data[0][:,:2]
-        target = torch.fmod(cand_data[2][:,2],2).long()
+        target = torch.fmod(cand_data[1][:,2],2).long()
 
         cand_loss = loss_2 = self.net.loss_2(output, target) * weight_factor
 

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 class candidate_creator(nn.Module):
@@ -24,7 +25,7 @@ class candidate_creator(nn.Module):
 
         return candidates, cand_target
 
-    def create_cands_global(self, x, periods, final_layer, target=None, num_cands=2, masked_area=25, threshold=0):
+    def create_cands_global(self, x, periods, final_layer, target=None, num_cands=2, masked_area=35, threshold=0):
         x = x.permute(0, 1, 2, 3)
         x_repeated = x.repeat(num_cands, 1, 1, 1)
         if target is not None:
@@ -39,18 +40,30 @@ class candidate_creator(nn.Module):
             start = i * x.shape[0]
             end = (i + 1) * x.shape[0]
             out_pool, max_pos = self.glob_pool(x_repeated[start:end, :, :, :])
+            # print(max_pos.shape)
 
             max_pos = max_pos[:, :, 0, 0].float()
-            max_pos_freq = max_pos % x.shape[2]
+            max_pos_freq = max_pos // x.shape[3] % x.shape[2]
+            # print(max_pos_freq, max_pos)
+            # #plt.imshow(x_repeated.cpu().detach().numpy()[start:end,0,:,0], aspect='auto', interpolation=None)
+            # plt.plot(x_repeated.cpu().detach().numpy()[end-1,0,:,1])
+            # #plt.colorbar()
+            # plt.ylim(-5,1)
+            # plt.show()
             if num_cands - i != 1:
                 mask = (
                     ini_mask - max_pos_freq[:, :, None, None]).abs() < masked_area
                 mask_repeated = mask.repeat(num_cands - i - 1, 1, 1, 1)
+                # print(mask_repeated.shape)
 
                 x_repeated[end:, :, :, :][mask_repeated] = -100
 
             # x[:, :, :, max_pos_chan.long(), max_pos_chan.long()] = -100
 
+        # print(mask_repeated.shape, target_repeated.shape, ini_mask.shape, x_repeated.shape)
+        # plt.imshow(x_repeated.cpu().detach().numpy()[:,0,:,1], aspect='auto', interpolation='nearest', vmin=-5)
+        # plt.colorbar()
+        # plt.show()
         out_pool, max_pos = self.glob_pool(x_repeated[:, :, :, :])
         max_pos = max_pos[:, 0, 0, 0] // x.shape[3] % x.shape[2]
         max_pos_per = max_pos.long()
@@ -74,6 +87,8 @@ class candidate_creator(nn.Module):
                     out_period.cpu(), target_periods.cpu())
                 if is_harmonic:
                     target_repeated[i, 2] = 1
+                else:
+                    target_repeated[i, 2] = 0
 
         output = torch.cat((output, periods.unsqueeze(1)), 1)
 

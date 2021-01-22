@@ -209,6 +209,12 @@ class classifier_ffa(nn.Module):
 
         if getattr(self, 'dm0_class', 0):
             out_conv = out_conv[:,:,:,:,:-1] - out_conv[:,:,:,:,-1][:,:,:,:,None]
+
+        reduce_edges = 1
+        if reduce_edges:
+            out_conv[:,:,:,:50,:] = -100
+            out_conv[:,:,:,-50:,:] = -100
+
         pooled, max_pos = self.glob_pool(out_conv)
         max_pos = max_pos[:, 0, 0, 0, 0]
         max_pos_period = max_pos // out_conv.shape[4] % out_conv.shape[3]

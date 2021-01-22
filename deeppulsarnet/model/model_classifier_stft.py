@@ -283,6 +283,11 @@ class classifier_stft(nn.Module):
 
         #out_conv = self.conv(stft.unsqueeze(1))
 
+        reduce_edges = 1
+        if reduce_edges:
+            out_conv[:,:,:50,:] = -100
+            out_conv[:,:,-50:,:] = -100
+
         out_pool, max_pos = self.glob_pool(out_conv)
         #out_pool = out_pool[:, 0, :, :, :]
         # print(max_pos, out_conv.shape, self.fft_res, 1 / (self.input_resolution * self.input_length))

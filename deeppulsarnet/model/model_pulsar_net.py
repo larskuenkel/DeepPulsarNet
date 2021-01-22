@@ -6,7 +6,11 @@ from model.model_encoder import pulsar_encoder
 from model.model_tcn_multi import TemporalConvNet_multi
 from model.model_output import OutputLayer
 from model.model_multiclass import MultiClass
-from model.model_classifier_ffa import classifier_ffa
+try:
+    from model.model_classifier_ffa import classifier_ffa
+except ImportError:
+    print("FFA classifier not imported properly")
+    pass
 from model.model_classifier_stft import classifier_stft
 from model.model_candidate_creator import candidate_creator
 from torch.utils.checkpoint import checkpoint
