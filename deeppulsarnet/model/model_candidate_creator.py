@@ -20,8 +20,21 @@ class candidate_creator(nn.Module):
         out_conv = class_data[0]
         periods = class_data[1]
 
-        candidates, cand_target = self.create_cands_global(
-            out_conv, periods, final_layer, target, num_cands=self.added_cands, threshold=self.candidate_threshold)
+        if self.added_cands > 0:
+            candidates, cand_target = self.create_cands_global(
+                out_conv, periods, final_layer, target, num_cands=self.added_cands, threshold=self.candidate_threshold)
+        # else:
+        #     cands_target = torch.empty(0, requires_grad=True)
+
+        if self.psr_cands:
+            psr_candidates, psr_cand_target = self.create_cands_psr(
+                out_conv, periods, final_layer, target=target)
+            if self.added_cands > 0:
+                candidates = torch.cat((candidates, psr_candidates), dim=0)
+                cand_target = torch.cat((cand_target, psr_cand_target), dim=0)
+            else:
+                candidates = psr_candidates
+                cand_target = psr_cand_target
 
         return candidates, cand_target
 
@@ -67,21 +80,22 @@ class candidate_creator(nn.Module):
         out_pool, max_pos = self.glob_pool(x_repeated[:, :, :, :])
         max_pos = max_pos[:, 0, 0, 0] // x.shape[3] % x.shape[2]
         max_pos_per = max_pos.long()
-        periods = periods[max_pos_per]
+        cands_periods = periods[max_pos_per]
 
         out_pool_reshape = out_pool[:, :, 0, 0]
         output = final_layer(out_pool_reshape)
         converted = F.softmax(output, 1)
         if self.candidate_threshold > 0:
             output = output[converted[:, 1] > self.candidate_threshold, :]
-            periods = periods[converted[:, 1] > self.candidate_threshold, :]
+            cands_periods = cands_periods[converted[:, 1]
+                                          > self.candidate_threshold, :]
             if target is not None:
                 target_repeated = target_repeated[converted[:, 1]
                                                   > self.candidate_threshold, :]
 
         if output.shape[0] > 0 and target is not None:
             for i in range(output.shape[0]):
-                out_period = periods[i]
+                out_period = cands_periods[i]
                 target_periods = target_repeated[i, 0]
                 is_harmonic = check_harmonic(
                     out_period.cpu(), target_periods.cpu())
@@ -90,9 +104,42 @@ class candidate_creator(nn.Module):
                 else:
                     target_repeated[i, 2] = 0
 
-        output = torch.cat((output, periods.unsqueeze(1)), 1)
+        output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
 
         return output, target_repeated
+
+    def create_cands_psr(self, x, periods, final_layer, target, pool_range=20):
+
+        # print(target)
+
+        batch_mask = (target[:, 2].long() % 2) != 0
+        psr_conv = x[batch_mask, :, :, :]
+        #psr_target = target[target[:,0]==target[:,0],:]
+        psr_target = target[batch_mask, :]
+        # print(psr_conv.shape, psr_target.shape)
+        periods_expanded = periods.unsqueeze(0).expand(psr_target.shape[0], -1)
+        period_positions = torch.argmin(
+            (periods_expanded - psr_target[:, :1]).abs(), dim=1)
+        #ini_mask = torch.ones_like(x)
+        ini_mask = torch.arange(x.shape[2]).reshape(1, 1, x.shape[2], 1).expand(
+            psr_conv.shape[0], x.shape[1], -1, x.shape[3]).to(x.device).float()
+
+        mask = (ini_mask - period_positions[:,
+                                            None, None, None]).abs() > pool_range
+        psr_conv[mask] = -100
+        out_pool, max_pos = self.glob_pool(psr_conv[:, :, :, :])
+        max_pos = max_pos[:, 0, 0, 0] // x.shape[3] % x.shape[2]
+        max_pos_per = max_pos.long()
+        cands_periods = periods[max_pos_per]
+
+        out_pool_reshape = out_pool[:, :, 0, 0]
+        output = final_layer(out_pool_reshape)
+
+        output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
+
+        psr_target[:, 2] = 3
+
+        return output, psr_target
 
 
 def check_harmonic(period_1, period_2, harmonics=8, fraction_error=0.02):

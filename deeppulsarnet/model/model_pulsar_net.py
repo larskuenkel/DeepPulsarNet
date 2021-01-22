@@ -258,6 +258,11 @@ class pulsar_net(nn.Module):
         return out
 
     def apply_net(self, input, target=None):
+
+        if target is not None:
+            target = target.to(input.device)
+            if len(target.shape)==1:
+                target = target.unsqueeze(0)
         input = self.preprocess(input)
 
         encoded = self.calc_tcn_out(input)
