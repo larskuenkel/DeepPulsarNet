@@ -10,6 +10,6 @@
 	"norm" : false,
 	"nn_layers" : 2,
 	"height_dropout" : 0.3,
-	"harmonic_downsample" : false,
-	"train_harmonic": false
+	"harmonic_downsample" : true,
+	"train_harmonic": true
 }

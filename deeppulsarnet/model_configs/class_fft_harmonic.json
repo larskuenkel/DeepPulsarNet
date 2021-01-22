@@ -11,5 +11,5 @@
 	"nn_layers" : 1,
 	"height_dropout" : 0,
 	"harmonic_downsample" : true,
-	"train_harmonic": false
+	"train_harmonic": true
 }

@@ -188,7 +188,8 @@ class pulsar_net(nn.Module):
                                                                                    harmonics=class_para.harmonics, nn_layers=class_para.nn_layers, stft_count=class_para.stft_count,
                                                                                    dm0_class=dm0_class, crop_factor=class_para.crop_factor, channels=class_para.channels,
                                                                                    kernel=class_para.kernel,
-                                                                                   name=f"classifier_{class_para.name}", harmonic_downsample=class_para.harmonic_downsample))
+                                                                                   name=f"classifier_{class_para.name}", harmonic_downsample=class_para.harmonic_downsample,
+                                                                                   train_harmonic=class_para.train_harmonic))
                 self.classifiers.append(
                     getattr(self, f"classifier_{class_para.name}"))
         # else:

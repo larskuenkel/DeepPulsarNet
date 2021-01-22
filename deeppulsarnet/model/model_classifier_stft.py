@@ -86,7 +86,7 @@ class Height_conv(nn.Module):
             return output
 
 
-def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0, harmonic_downsample=False):
+def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0, harmonic_downsample=False, no_adding=False):
     if length == 0:
         length = x.shape[2]
     if hop_length == 0:
@@ -117,11 +117,28 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
                         2, 1), kernel_size=(harm_counter + 1),stride=(harm_counter + 1)).transpose(2, 1)[:, :crop, :]
                     pad_val = added.shape[1] - downsampled.shape[1]
                     downsampled = F.pad(downsampled, (0,0,0,pad_val))
-                    added = added[:, :, :] + downsampled
+                    # added = added[:, :, :] + downsampled
+                    if not no_adding:
+                        added = added[:, :, :] + downsampled
+                    else:
+                        if switch_harm == 0:
+                            # print(x.shape, power_stft.shape, downsampled.shape)
+                            # out_harm = downsampled.unsqueeze(3).unsqueeze(4)
+                            out_harm = torch.cat((power_stft.unsqueeze(3).unsqueeze(4), downsampled.unsqueeze(3).unsqueeze(4)), dim=4)
+                            switch_harm = 1
+                        else:
+                            # print(x.shape, power_stft.shape, downsampled.shape)
+                            out_harm = torch.cat((out_harm, downsampled.unsqueeze(3).unsqueeze(4)), dim=4)
+                            # print(out_harm.shape)
                     # print(added, downsampled, pad_val)
                 # print(added.device, added.shape)
             added_harmonics += 1
-            if added_harmonics == 2 ** stft_count:
+            # if no_adding:
+            #     if harmonic_downsample:
+            #         pad_val = power_stft.shape[1] - downsampled.shape[1]
+            #         downsampled = F.pad(downsampled, (0,0,0,0,0,pad_val))
+            #         added = torch.cat((added[:, :, :, :], downsampled.permute(0,1, 3, 2)), dim=3)
+            if added_harmonics == 2 ** stft_count and not no_adding:
                 if pool_size:
                     single_out = F.adaptive_max_pool1d(
                         added.transpose(2, 1), pool_size).transpose(2, 1)
@@ -149,7 +166,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
         out_stft = out_stft / std[:, None, None]
     # if not harmonics:
     #     out_stft = out_stft[:, :, :, :]
-    # print(out_stft.shape)
+    # print(out_stft.shape, no_adding)
 
     return out_stft
 
@@ -157,7 +174,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
 class classifier_stft(nn.Module):
     def __init__(self, input_length, input_resolution, height_dropout=0, norm=0, harmonics=4, nn_layers=2,
                  stft_count=1, dm0_class=False, crop_factor=0.8, channels=8,
-                 kernel=11, name='', harmonic_downsample=False):
+                 kernel=11, name='', harmonic_downsample=False, train_harmonic=False):
         super().__init__()
         self.input_length = input_length
         #self.crop = int(crop_factor * (self.input_length // 2))
@@ -183,6 +200,10 @@ class classifier_stft(nn.Module):
 
         self.name = name
         self.harmonic_downsample = harmonic_downsample
+        self.train_harmonic = train_harmonic
+        if self.train_harmonic:
+            self.harmonic_net = nn.Sequential(nn.Conv3d(self.harmonics**2, self.harmonics+1, (1,1,1)),
+                nn.LeakyReLU())
 
         for j in range(stft_count):
             current_in = 1
@@ -260,11 +281,34 @@ class classifier_stft(nn.Module):
             (x.shape[0], self.total_height, self.min_length // 2, x.shape[1] * (self.harmonics + 1))).to(x.device)
         j = 0
         k = 0
+        if not hasattr(self, 'train_harmonic'):
+            self.train_harmonic = False
         for length in self.lengths:
             stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
-                                harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample)
+                                harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
+                                no_adding=self.train_harmonic)
+            # if len(stft.shape)==4:
+            #     stft = stft.unsqueeze(1)
+            if self.train_harmonic:
+                # print(stft.shape, 'before')
+                stft = self.harmonic_net(stft.transpose(1,4)).transpose(1,4)
+                # print(stft.shape, 'before')
+                stft = stft.reshape(stft.shape[0],stft.shape[1],stft.shape[2], stft.shape[3]*stft.shape[4])
+                # print(stft.shape, 'after')
+
+            # else:
+            #     stft = stft.unsqueeze(1)
+
             out_pool = getattr(self, f"pool_{length}")(stft.unsqueeze(1))
+
             out_pool = out_pool[:, 0, :, :self.min_length // 2, :]
+            # if self.train_harmonic:
+            #     out_pool = self.harmonic_net(out_pool.transpose(2,4)).transpose(2,4)
+            #     print(out_pool.shape, 'before')
+            #     out_pool = out_pool.reshape(-1,-1,-1, out_pool.shape[3]*out_pool.shape[4])[:, :, :self.min_length // 2, :]
+            #     print(out_pool.shape)
+            # else:
+            #     out_pool = out_pool[:, 0, :, :self.min_length // 2, :]
             current_height = out_pool.shape[1]
             combined_pool[:, k:k + current_height, :, :] = out_pool[:, :, :, :]
             j += 1
