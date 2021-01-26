@@ -25,8 +25,16 @@ class candidate_creator(nn.Module):
                 out_conv, periods, final_layer, target, num_cands=self.added_cands, threshold=self.candidate_threshold)
         # else:
         #     cands_target = torch.empty(0, requires_grad=True)
+        if target is not None and self.psr_cands:
+            psr_in_batch = (target[:, 2].long() % 2) != 0
+            if True in psr_in_batch:
+                do_psr_cands = True
+            else:
+                do_psr_cands = False
+        else:
+            do_psr_cands = False
 
-        if self.psr_cands:
+        if do_psr_cands:
             psr_candidates, psr_cand_target = self.create_cands_psr(
                 out_conv, periods, final_layer, target=target)
             if self.added_cands > 0:
@@ -35,6 +43,10 @@ class candidate_creator(nn.Module):
             else:
                 candidates = psr_candidates
                 cand_target = psr_cand_target
+
+        if self.added_cands==0 and not do_psr_cands:
+            candidates = torch.empty(0, requires_grad=True)
+            cand_target = torch.empty(0, requires_grad=True)
 
         return candidates, cand_target
 
