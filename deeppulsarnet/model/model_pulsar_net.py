@@ -172,7 +172,10 @@ class pulsar_net(nn.Module):
 
             # if 'ffa' in self.class_mode:
             if class_para.class_type == 'ffa':
-                setattr(self, f"classifier_ffa{added}", classifier_ffa(self.output_resolution, no_reg=True, dm0_class=False,
+                class_name = f"classifier_ffa{added}"
+                while hasattr(self, class_name):
+                    class_name += '_'
+                setattr(self, class_name, classifier_ffa(self.output_resolution, no_reg=True, dm0_class=False,
                                                                         pooling=class_para.pooling, nn_layers=class_para.nn_layers, channels=class_para.channels,
                                                                         kernel=class_para.kernel, norm=class_para.norm, use_ampl=class_para.only_use_amplitude,
                                                                         min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
@@ -184,7 +187,10 @@ class pulsar_net(nn.Module):
 
             # if 'stft_comb' in self.class_mode:
             if class_para.class_type == 'stft':
-                setattr(self, f"classifier_{class_para.name}", classifier_stft(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
+                class_name = f"classifier_{class_para.name}"
+                while hasattr(self, class_name):
+                    class_name += '_'
+                setattr(self, class_name, classifier_stft(self.out_length, self.output_resolution, height_dropout=class_para.height_dropout, norm=class_para.norm,
                                                                                    harmonics=class_para.harmonics, nn_layers=class_para.nn_layers, stft_count=class_para.stft_count,
                                                                                    dm0_class=dm0_class, crop_factor=class_para.crop_factor, channels=class_para.channels,
                                                                                    kernel=class_para.kernel,
