@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "fft_harm_downsample",
+	"name" : "fft_harmonic",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,

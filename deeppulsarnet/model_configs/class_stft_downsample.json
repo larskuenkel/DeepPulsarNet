@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "stft",
+	"name" : "stft_downsample",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
