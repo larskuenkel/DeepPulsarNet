@@ -11,7 +11,7 @@ class FilDataset(data_utils.Dataset):
     def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, 
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
                  dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
-                 set_based=False, sim_prob=0.5):
+                 set_based=False, sim_prob=0.5, discard_labels=False):
         self.df = df
         self.df.reset_index(drop=True, inplace=True)
         #self.df.sort_values('Unnamed: 0', inplace=True)
@@ -33,6 +33,10 @@ class FilDataset(data_utils.Dataset):
         #  load csv file containing noise files
         # self.noise_df = pd.read_csv('/home/lkuenkel/neural_nets/pulsar_net_noise/datasets/palfa_test_minus88.csv')
         self.noise_df = df_noise
+        self.df_noise['Ini Label'] = self.df_noise['Label'].copy()
+
+        if discard_labels:
+            self.df_noise['Label'] = 0
         #self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 2]
         self.noise = (0.3, 2)
         self.enc_shape = enc_shape

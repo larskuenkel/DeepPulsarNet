@@ -146,11 +146,13 @@ def main():
                         help='Simulation probability when set_based is used.')
     parser.add_argument('--relabel_set', action='store_true',
                         help='Correct labels in the observation set when the network thinks it sees a pulsar.')
+    parser.add_argument('--discard_labels', action='store_true',
+                        help='Discard all labels in the observation set.')
     parser.add_argument('--reverse_batch', action='store_true',
                         help='Reverse batch after each batch and try to predict negative.')
     parser.add_argument('--class_weight', type=float, nargs=2,
-                        default=[1,1], help='Weight of the classes.')
-    parser.add_argument('--added_cands', type=int, 
+                        default=[1, 1], help='Weight of the classes.')
+    parser.add_argument('--added_cands', type=int,
                         default=0, help='Number of additional candidates per file per classifier.')
     parser.add_argument('--psr_cands', action='store_true',
                         help='Also use a candidate at the position of the pulsar period during training.')
@@ -213,48 +215,48 @@ def main():
 
     # torch.backends.cudnn.enabled == True
 
-    down_factor = (model_para.encoder_stride *
-                   model_para.encoder_pooling) ** len(model_para.encoder_channels)
+        down_factor = (model_para.encoder_stride *
+                       model_para.encoder_pooling) ** len(model_para.encoder_channels)
 
-    length, enc_length = args.length, args.length / down_factor
+        length, enc_length = args.length, args.length / down_factor
 
-    enc_shape = (model_para.output_channels, enc_length)
+        enc_shape = (model_para.output_channels, enc_length)
 
-    np.random.seed(2)
-    torch.manual_seed(1)  # reproducible
-    if cuda:
-        torch.cuda.manual_seed(1)  # reproducible
-    device = torch.device("cuda:0" if cuda else "cpu")
+        np.random.seed(2)
+        torch.manual_seed(1)  # reproducible
+        if cuda:
+            torch.cuda.manual_seed(1)  # reproducible
+        device = torch.device("cuda:0" if cuda else "cpu")
 
-    #  Setup loggin, plotting and create data
-    logging = logger.logger(args.p, args.name)
+        #  Setup loggin, plotting and create data
+        logging = logger.logger(args.p, args.name)
 
-    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
-        args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
-        snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
-        set_based=args.set_based, sim_prob=args.sim_prob)
+        train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
+            args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
+            snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
+            dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+            set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
-    if args.path_test != '' or args.use_val_as_test:
-        _, test_loader, _, _, _, _, _ = data_loader.create_loader(
-            args.path_test, None, 0, length, 1, args.edge,
-            mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
-            df_val_test=df_for_test)
-        if args.add_test_to_train:
-            df_test = test_loader.dataset.df
-            df_test = df_test[df_test['Label'] == 1]
-            df_test['MaskName'] = ''
-            for k in range(args.add_test_to_train):
-                train_loader.dataset.df = train_loader.dataset.df.append(
-                    df_test)
-                print(len(train_loader.dataset.df))
-    else:
-        test_loader = None
+        if args.path_test != '' or args.use_val_as_test:
+            _, test_loader, _, _, _, _, _ = data_loader.create_loader(
+                args.path_test, None, 0, length, 1, args.edge,
+                mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
+                df_val_test=df_for_test)
+            if args.add_test_to_train:
+                df_test = test_loader.dataset.df
+                df_test = df_test[df_test['Label'] == 1]
+                df_test['MaskName'] = ''
+                for k in range(args.add_test_to_train):
+                    train_loader.dataset.df = train_loader.dataset.df.append(
+                        df_test)
+                    print(len(train_loader.dataset.df))
+        else:
+            test_loader = None
 
-    # print('Data shape: {}'.format(example_shape))
-    (channels, real_length) = example_shape
-    example_shape_altered = example_shape
-    if real_length != length:
+        # print('Data shape: {}'.format(example_shape))
+        (channels, real_length) = example_shape
+        example_shape_altered = example_shape
+        if real_length != length:
         print('Example file short than expected! No padding implemented yet.')
 
     print('Train samples: {}'.format(len(train_loader.dataset)))
@@ -275,7 +277,8 @@ def main():
 
             # Adding new classifiers does not curently
         if args.overwrite_classifier or args.add_classifier:
-            net.create_classifier_levels(args.class_configs, no_reg=args.no_reg, overwrite=args.overwrite_classifier, dm0_class=args.dm0_class)
+            net.create_classifier_levels(args.class_configs, no_reg=args.no_reg,
+                                         overwrite=args.overwrite_classifier, dm0_class=args.dm0_class)
             net.to(device)
 
         net.reset_optimizer(args.l, decay=args.decay,
@@ -430,18 +433,8 @@ def main():
         #     if not class_ok and epoch % 1 == 0 and len(train_net.net.classifiers):
         #         class_ok = train_net.check_classifier()
         if args.relabel_set:
-            try:
-                psr_in_train = train_net.train_loader.dataset.noise_df['Label'].value_counts().loc[5]
-            except KeyError:
-                psr_in_train = 0
-            try:
-                psr_in_val = train_net.valid_loader.dataset.noise_df['Label'].value_counts().loc[5]
-            except:
-                psr_in_val = 0
-            print(f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}")
-            train_net.train_loader.dataset.noise_df.to_csv(f'./results/train_{args.name}.csv')
-            if valid_loader is not None:
-                train_net.valid_loader.dataset.noise_df.to_csv(f'./results/valid_{args.name}.csv')
+            train_net.logger.log_relabel(train_net.train_loader.dataset.noise_df, train_net.valid_loader.dataset.noise_df,
+                args.name)
 
         if epoch % 1 == 0 and args.ffa_test != '':
             # ffa_count, non_detec, csv_ffa = ffa_test_whole_perf.main(
