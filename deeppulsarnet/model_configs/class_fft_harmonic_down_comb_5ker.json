@@ -1,16 +1,16 @@
 {
 	"class_type" : "stft",
-	"name" : "fft",
+	"name" : "fft_harmonic_down_comb_5ker",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
-	"kernel" : 11,
+	"kernel" : 5,
 	"stft_count" : 1,
 	"harmonics" : 4,
 	"norm" : false,
 	"nn_layers" : 1,
 	"height_dropout" : 0,
-	"harmonic_downsample" : false,
-	"train_harmonic": false,
-	"combine_harm": false
+	"harmonic_downsample" : true,
+	"train_harmonic": true,
+	"combine_harm": true
 }

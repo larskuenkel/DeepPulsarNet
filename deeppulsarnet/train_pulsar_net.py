@@ -95,7 +95,7 @@ def main():
                         default=[0, 2000], help='Range of DM.')
     # parser.add_argument('--shift', action='store_true',
     #                     help='Shift the target according to the DM. currently broken.')
-    parser.add_argument('--loss_weights', type=float, nargs=4,
+    parser.add_argument('--loss_weights', type=float, nargs=5,
                         default=(0.001, 0.001, 1, 1, 1), help='Loss weights. [regression, classification, reconstruction, single_classifiers, candidates]\
                         regression not used currently')
     parser.add_argument('--train_single', action='store_false',

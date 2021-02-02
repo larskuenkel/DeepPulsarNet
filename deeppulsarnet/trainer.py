@@ -169,9 +169,12 @@ class trainer():
                         self.net.optimizer.step()  # apply gradients
                         self.net.optimizer.zero_grad()
                 # stack results for scatter plot
+                cand_combined = torch.cat((candidate_data[0].detach().cpu(), candidate_data[1].detach().cpu()), dim=1).numpy()
                 self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
                                          ten_y2.detach().cpu().numpy().tolist(),
-                                         output_single_class.detach().cpu().numpy().tolist())
+                                         output_single_class.detach().cpu().numpy().tolist(),
+                                         cand_combined.tolist())
+
 
                 if not self.net.mode == 'dedisperse':
                     # if not self.mode == 'train':
@@ -254,6 +257,7 @@ class trainer():
         self.logger.out_stack = [[1, 0, 0,0,0,0,0], [0, 1, 0, 0,0,0,0]]
         self.logger.out_single_stack = []
         self.logger.target_stack = [[0, 0, 0, -1, 0, 0,0,0,0], [0, 0, 1, -1, 0, 0,0,0,0]]
+        self.logger.cand_stack = []
         # if not self.no_reg:
         #     self.logger.out_stack = [[0, 1, 0,0], [0, 0, 1,0]]
         #     self.logger.target_stack = [[0, 0, 0, -1,0], [0, 0, 1, -1,0]]

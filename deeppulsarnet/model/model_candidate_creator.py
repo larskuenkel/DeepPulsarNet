@@ -16,13 +16,13 @@ class candidate_creator(nn.Module):
 
         # self.cand_pool = nn.AdaptiveMaxPool2d((1, 1), return_indices=True)
 
-    def forward(self, class_data, final_layer, target=None):
+    def forward(self, class_data, final_layer, channel_correction, target=None):
         out_conv = class_data[0]
         periods = class_data[1]
 
         if self.added_cands > 0:
             candidates, cand_target = self.create_cands_global(
-                out_conv, periods, final_layer, target, num_cands=self.added_cands, threshold=self.candidate_threshold)
+                out_conv, periods, final_layer, channel_correction, target=target, num_cands=self.added_cands, threshold=self.candidate_threshold)
         # else:
         #     cands_target = torch.empty(0, requires_grad=True)
         if target is not None and self.psr_cands:
@@ -44,13 +44,13 @@ class candidate_creator(nn.Module):
                 candidates = psr_candidates
                 cand_target = psr_cand_target
 
-        if self.added_cands==0 and not do_psr_cands:
+        if self.added_cands == 0 and not do_psr_cands:
             candidates = torch.empty(0, requires_grad=True)
             cand_target = torch.empty(0, requires_grad=True)
 
         return candidates, cand_target
 
-    def create_cands_global(self, x, periods, final_layer, target=None, num_cands=2, masked_area=35, threshold=0):
+    def create_cands_global(self, x, periods, final_layer, channel_correction, target=None, num_cands=2, masked_area=20, threshold=0):
         x = x.permute(0, 1, 2, 3)
         x_repeated = x.repeat(num_cands, 1, 1, 1)
         if target is not None:
@@ -94,6 +94,15 @@ class candidate_creator(nn.Module):
         max_pos_per = max_pos.long()
         cands_periods = periods[max_pos_per]
 
+        max_pos_chan_raw = (max_pos % x.shape[3]).long()
+        # print(max_pos_chan_raw)
+        # if not channel_correction is None:
+        #     print(channel_correction)
+        #     corrections = channel_correction[max_pos_chan_raw]
+        #     print(cands_periods, corrections)
+        #     cands_periods = cands_periods * corrections
+        #     print(cands_periods)
+
         out_pool_reshape = out_pool[:, :, 0, 0]
         output = final_layer(out_pool_reshape)
         converted = F.softmax(output, 1)
@@ -104,13 +113,17 @@ class candidate_creator(nn.Module):
             if target is not None:
                 target_repeated = target_repeated[converted[:, 1]
                                                   > self.candidate_threshold, :]
+        target_repeated = torch.cat(
+            (target_repeated, target_repeated[:, 2:3]), 1)
 
         if output.shape[0] > 0 and target is not None:
             for i in range(output.shape[0]):
                 out_period = cands_periods[i]
                 target_periods = target_repeated[i, 0]
-                is_harmonic = check_harmonic(
-                    out_period.cpu(), target_periods.cpu())
+                # is_harmonic = check_harmonic(
+                #     out_period.cpu(), target_periods.cpu())
+                is_harmonic = check_harmonic_bins(
+                    out_period.cpu().numpy(), target_periods.cpu().numpy(), periods.cpu().numpy())
                 if is_harmonic:
                     target_repeated[i, 2] = 1
                 else:
@@ -120,7 +133,7 @@ class candidate_creator(nn.Module):
 
         return output, target_repeated
 
-    def create_cands_psr(self, x, periods, final_layer, target, pool_range=20):
+    def create_cands_psr(self, x, periods, final_layer, target, pool_range=3):
 
         # print(target)
 
@@ -149,12 +162,14 @@ class candidate_creator(nn.Module):
 
         output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
 
+        psr_target = torch.cat((psr_target, psr_target[:, 2:3]), 1)
+
         psr_target[:, 2] = 3
 
         return output, psr_target
 
 
-def check_harmonic(period_1, period_2, harmonics=8, fraction_error=0.02):
+def check_harmonic(period_1, period_2, harmonics=16, fraction_error=0.02):
     quot = np.max((period_1 / period_2, period_2 / period_1))
     rounded = np.min((np.round(quot), harmonics))
     deviation = np.abs(((quot - rounded) / rounded))
@@ -164,3 +179,38 @@ def check_harmonic(period_1, period_2, harmonics=8, fraction_error=0.02):
         is_harmonic = False
 
     return is_harmonic
+
+
+def check_harmonic_bins(period_1, period_2, period_array, harmonics=32, bins_distance=20):
+    # We check what kind of harmonic the signal could be
+    # Afterwards we rescale how close the signals are after rescaling it to the lower
+    per_sort = sorted([period_1, period_2])
+    max_per = per_sort[1]
+    min_per = per_sort[0]
+    quot = max_per / min_per
+    rounded = np.min((np.round(quot), harmonics))
+    # code for rescaling to target
+    # if period_2 > period_1:
+    #     pos_round = check_pos(period_array, period_1 * rounded)
+    # else:
+    #     pos_round = check_pos(period_array, period_1 / rounded)
+
+    # pos_orig = check_pos(period_array, period_2)
+
+    # code for rescaling to lower
+    pos_round = check_pos(period_array, max_per/rounded)
+    pos_orig = check_pos(period_array, min_per)
+    deviation = np.abs(pos_round - pos_orig)
+    if deviation < bins_distance:
+        is_harmonic = True
+    else:
+        is_harmonic = False
+    # print(deviation, period_1, period_2, rounded,
+    #       max_per / min_per, is_harmonic)
+
+    return is_harmonic
+
+
+def check_pos(array, value):
+    position = np.argmin(np.abs(array - value))
+    return position

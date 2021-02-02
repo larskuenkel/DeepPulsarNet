@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "fft",
+	"name" : "fft_harmonic_up",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
@@ -11,6 +11,6 @@
 	"nn_layers" : 1,
 	"height_dropout" : 0,
 	"harmonic_downsample" : false,
-	"train_harmonic": false,
+	"train_harmonic": true,
 	"combine_harm": false
 }

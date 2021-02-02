@@ -133,6 +133,7 @@ class classifier_ffa(nn.Module):
         self.bins_max = bins_max
         self.remove_threshold = remove_threshold
         self.name = name
+        self.channel_correction = None
 
         if self.use_pytorch:
             # curently broken due to different riptide structure
