@@ -343,42 +343,49 @@ class logger():
         return out_string
 
     def log_relabel(self, train_set, val_set, name):
-    number_labelled = train_set.value_counts().loc[1]
 
-    if number_labelled != 0:
-        cm_train = pycm.ConfusionMatrix(train_set['Ini Labels'] % 2, train_set['Labels'] % 2)
-        mcc_train = cm_train.MCC['1']
-        tp_train = cm_train.TP['1']
-        fp_train = cm_train.FP['1']
-        out_string = f'Train: MCC: {mcc_train} (TP: {tp_train}; FP: {fp_train} |'
-        if valid_loader is not None:
-            cm_val = pycm.ConfusionMatrix(val_set['Ini Labels'] % 2, val_set['Labels'] % 2)
-            mcc_val = cm_val.MCC['1']
-            tp_val = cm_val.TP['1']
-            fp_val = cm_val.FP['1']
-            out_string += f'Validation: MCC: {mcc_val} (TP: {tp_val}; FP: {fp_val}'
-    else:
+        cm_train = pycm.ConfusionMatrix(train_set['Ini Label'].to_numpy() % 2, train_set['Label'].to_numpy() % 2)
+        # print(cm_train)
+        # print(train_set['Ini Label'].to_numpy(),  train_set['Label'].to_numpy())
         try:
-            psr_in_train = train_set.value_counts().loc[5]
+            mcc_train = cm_train.MCC[1]
+            tp_train = cm_train.TP[1]
+            fp_train = cm_train.FP[1]
+            out_string = f'Train: MCC: {mcc_train} (TP: {tp_train}; FP: {fp_train}) |'
         except KeyError:
-            psr_in_train = 0
-        try:
-            psr_in_val = val_set.value_counts().loc[5]
-        except:
-            psr_in_val = 0
+            out_string = f'Train: Only Noise |'
+        if val_set is not None:
+            try:
+                cm_val = pycm.ConfusionMatrix(val_set['Ini Label'].to_numpy() % 2, val_set['Label'].to_numpy() % 2)
+                mcc_val = cm_val.MCC[1]
+                tp_val = cm_val.TP[1]
+                fp_val = cm_val.FP[1]
+                out_string += f'Validation: MCC: {mcc_val} (TP: {tp_val}; FP: {fp_val})'
+            except:
+                out_string += f'Validation: Only Noise'
 
-        out_string = f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}"
+        # else:
+        #     try:
+        #         psr_in_train = train_set.value_counts().loc[5]
+        #     except KeyError:
+        #         psr_in_train = 0
+        #     try:
+        #         psr_in_val = val_set.value_counts().loc[5]
+        #     except:
+        #         psr_in_val = 0
 
-    print(out_string)
-    train_net.train_loader.dataset.noise_df.to_csv(
-            f'./results/train_{args.name}.csv')
-    if valid_loader is not None:
-        train_net.valid_loader.dataset.noise_df.to_csv(
-            f'./results/valid_{args.name}.csv')
+            # out_string = f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}"
+
+        print(out_string)
+        train_set.to_csv(
+                f'./results/train_{name}.csv')
+        if val_set is not None:
+            val_set.to_csv(
+                f'./results/valid_{name}.csv')
 
 def conv_mat_to_dict(mat):
     mat = mat.astype(int)
     class_1 = 'noise'
     class_2 = 'pulsar'
     mat_dict = {class_1: {class_1: int(mat[0,0]), class_2: int(mat[0,1])},class_2: {class_1: int(mat[1,0]), class_2: int(mat[1,1])}}
-    return conv_mat_to_dict
+    return mat_dict

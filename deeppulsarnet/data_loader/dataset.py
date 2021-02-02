@@ -30,13 +30,13 @@ class FilDataset(data_utils.Dataset):
             self.edge = edge
         print(self.edge)
         self.test = test
-        #  load csv file containing noise files
-        # self.noise_df = pd.read_csv('/home/lkuenkel/neural_nets/pulsar_net_noise/datasets/palfa_test_minus88.csv')
-        self.noise_df = df_noise
-        self.df_noise['Ini Label'] = self.df_noise['Label'].copy()
 
+        self.noise_df = df_noise.copy()
+
+        self.noise_df['Ini Label'] = self.noise_df['Label'].copy()
         if discard_labels:
-            self.df_noise['Label'] = 0
+            self.noise_df['Label'] = 2
+
         #self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 2]
         self.noise = (0.3, 2)
         self.enc_shape = enc_shape

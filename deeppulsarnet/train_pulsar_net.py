@@ -215,48 +215,48 @@ def main():
 
     # torch.backends.cudnn.enabled == True
 
-        down_factor = (model_para.encoder_stride *
-                       model_para.encoder_pooling) ** len(model_para.encoder_channels)
+    down_factor = (model_para.encoder_stride *
+                   model_para.encoder_pooling) ** len(model_para.encoder_channels)
 
-        length, enc_length = args.length, args.length / down_factor
+    length, enc_length = args.length, args.length / down_factor
 
-        enc_shape = (model_para.output_channels, enc_length)
+    enc_shape = (model_para.output_channels, enc_length)
 
-        np.random.seed(2)
-        torch.manual_seed(1)  # reproducible
-        if cuda:
-            torch.cuda.manual_seed(1)  # reproducible
-        device = torch.device("cuda:0" if cuda else "cpu")
+    np.random.seed(2)
+    torch.manual_seed(1)  # reproducible
+    if cuda:
+        torch.cuda.manual_seed(1)  # reproducible
+    device = torch.device("cuda:0" if cuda else "cpu")
 
-        #  Setup loggin, plotting and create data
-        logging = logger.logger(args.p, args.name)
+    #  Setup loggin, plotting and create data
+    logging = logger.logger(args.p, args.name)
 
-        train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
-            args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
-            snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-            dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
-            set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
+    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
+        args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
+        snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
+        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+        set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
-        if args.path_test != '' or args.use_val_as_test:
-            _, test_loader, _, _, _, _, _ = data_loader.create_loader(
-                args.path_test, None, 0, length, 1, args.edge,
-                mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
-                df_val_test=df_for_test)
-            if args.add_test_to_train:
-                df_test = test_loader.dataset.df
-                df_test = df_test[df_test['Label'] == 1]
-                df_test['MaskName'] = ''
-                for k in range(args.add_test_to_train):
-                    train_loader.dataset.df = train_loader.dataset.df.append(
-                        df_test)
-                    print(len(train_loader.dataset.df))
-        else:
-            test_loader = None
+    if args.path_test != '' or args.use_val_as_test:
+        _, test_loader, _, _, _, _, _ = data_loader.create_loader(
+            args.path_test, None, 0, length, 1, args.edge,
+            mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
+            df_val_test=df_for_test)
+        if args.add_test_to_train:
+            df_test = test_loader.dataset.df
+            df_test = df_test[df_test['Label'] == 1]
+            df_test['MaskName'] = ''
+            for k in range(args.add_test_to_train):
+                train_loader.dataset.df = train_loader.dataset.df.append(
+                    df_test)
+                print(len(train_loader.dataset.df))
+    else:
+        test_loader = None
 
-        # print('Data shape: {}'.format(example_shape))
-        (channels, real_length) = example_shape
-        example_shape_altered = example_shape
-        if real_length != length:
+    # print('Data shape: {}'.format(example_shape))
+    (channels, real_length) = example_shape
+    example_shape_altered = example_shape
+    if real_length != length:
         print('Example file short than expected! No padding implemented yet.')
 
     print('Train samples: {}'.format(len(train_loader.dataset)))
@@ -433,7 +433,11 @@ def main():
         #     if not class_ok and epoch % 1 == 0 and len(train_net.net.classifiers):
         #         class_ok = train_net.check_classifier()
         if args.relabel_set:
-            train_net.logger.log_relabel(train_net.train_loader.dataset.noise_df, train_net.valid_loader.dataset.noise_df,
+            if train_net.valid_loader is not None:
+                val_df = train_net.valid_loader.dataset.noise_df
+            else:
+                val_df = None
+            train_net.logger.log_relabel(train_net.train_loader.dataset.noise_df, val_df,
                 args.name)
 
         if epoch % 1 == 0 and args.ffa_test != '':
