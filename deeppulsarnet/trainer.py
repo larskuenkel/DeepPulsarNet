@@ -10,7 +10,7 @@ class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
                  loss_weights=(0.001, 0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False, bandpass=False, relabel_set =False):
+                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5]):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -43,6 +43,9 @@ class trainer():
         self.loss_pool_mse = loss_pool_mse
 
         self.relabel_set = relabel_set
+
+        self.threshold_pos = relabel_thresholds[0]
+        self.threshold_neg = relabel_thresholds[1]
 
 
     def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False, reverse_batch=False):
@@ -196,9 +199,9 @@ class trainer():
 
                 if self.net.epoch >= 2 and self.train_loader.dataset.set_based and self.relabel_set:
                     if batch_loop==0:
-                        self.relabel_set_no_cand(ten_y2, output_classifier)
+                        self.relabel_set_no_cand(output_classifier, ten_y2)
                     else:
-                        self.relabel_set_no_cand(ten_y2, output_classifier, reverse=True)
+                        self.relabel_set_no_cand(output_classifier, ten_y2, reverse=True)
 
         if self.net.mode == 'dedisperse':
             final_loss = self.logger.loss_meter_3.value()[0]
@@ -615,7 +618,7 @@ class trainer():
 
         return tensor_acf
 
-    def relabel_set_no_cand(self, target, output_labels, reverse=False):
+    def relabel_set_no_cand(self, output_labels, target, reverse=False):
 
         # print(target.shape, output_labels.shape)
         target_nosim = target[target[:,2]!=1]
@@ -627,6 +630,8 @@ class trainer():
 
         # cand_index = target_nosim[:, 7]
         obs_index_ini = target_nosim[:, 6]
+        obs_index_np = obs_index_ini.cpu().numpy().astype(int)
+        softmax_pred_np = softmaxed_ini[:,1].detach().cpu().numpy()
         # obs_index = obs_index_ini[target_output_labels!=1]
         # softmaxed = softmaxed_ini[target_output_labels!=1]
 
@@ -639,9 +644,9 @@ class trainer():
         # periods_cand = periods[cand_index==0]
 
         if not reverse:
-            threshold = 0.95
-            identified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold].cpu().numpy().astype(int)
-            identified_periods = periods[softmaxed_ini[:,1]>threshold].cpu().numpy()
+            # threshold = 0.95
+            identified_psrs = obs_index_ini[softmaxed_ini[:,1]>self.threshold_pos].cpu().numpy().astype(int)
+            identified_periods = periods[softmaxed_ini[:,1]>self.threshold_pos].cpu().numpy()
             if self.mode =='train':
                 label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
@@ -651,30 +656,101 @@ class trainer():
 
                     self.train_loader.dataset.noise_df.iat[psr, period_index] = new_period
 
+            if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
+                self.loader.dataset.noise_df["Pulsar Prediction"] = -1
+            pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
 
-#reverse and validation not implemented... yet still true=
+            for (pred, obs_index) in zip(softmax_pred_np, obs_index_np):
+                self.loader.dataset.noise_df.iat[obs_index, pred_index] = pred
+
             if self.mode =='validation':
-                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
-                for psr in identified_psrs:
-                    self.valid_loader.dataset.noise_df.iat[psr, label_index] = 5
-                    # print('relabelled sth')
+                pass
+                # currently no relabelling in validation set, validations set should be labelled
+                # label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
+                # for psr in identified_psrs:
+                #     self.valid_loader.dataset.noise_df.iat[psr, label_index] = 5
+
 
         if not reverse:
-            threshold_non = 0.5
-            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]<threshold_non].cpu().numpy().astype(int)
+            # threshold_neg = 0.5
+            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]<self.threshold_pos].cpu().numpy().astype(int)
         else:
-            threshold_non = 0.5
-            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold_non].cpu().numpy().astype(int)
+            # threshold_non = 0.5
+            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]>self.threshold_neg].cpu().numpy().astype(int)
         if self.mode =='train':
             for nonpsr in nonidentified_psrs:
                 label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
                 self.train_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
                 self.train_loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
-                # print('relabelled sth')
+
 
         if self.mode =='validation':
-            for nonpsr in nonidentified_psrs:
-                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
-                self.valid_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
-                # print('relabelled sth')
+            pass
+            # for nonpsr in nonidentified_psrs:
+            #     label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
+            #     self.valid_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
+
+    def label_set(self, mode='train', print_progress=True):
+        self.net.eval()
+        if mode == 'train':
+            self.loader = self.train_loader
+        if mode == 'validation':
+            self.loader = self.valid_loader
+        if mode == 'test':
+            self.loader = self.test_loader
+
+        for index in range(len(self.loader.dataset.noise_df)):
+            if print_progress:
+                print(index, end="\r")
+            row = self.loader.dataset.noise_df.iloc[index]
+            file = row['FileName']
+            # target = torch.Tensor([row.loc['P0'], row.loc['DM'], 0, row.loc['Unnamed: 0'], index, -1, index]).to(self.net.device)
+
+            reverse = True
+
+            ten_x = dataset.load_file_for_prediction(file, self.loader.dataset.length, self.loader.dataset.edge, chunks=2, reverse=reverse).to(self.net.device)
+
+            output_image, output_classifier, output_single_class, candidate_data = self.net(ten_x)
+
+            self.relabel_slow(output_classifier, index, reverse=reverse)
+
+
+    def relabel_slow(self, output_labels, index, reverse=True):
+
+        if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
+            self.loader.dataset.noise_df["Pulsar Prediction"] = -1
+
+
+        softmaxed_ini = F.softmax(output_labels[:,:2], 1)
+
+        if reverse:
+            half_size = softmaxed_ini.shape[0] // 2
+            if (softmaxed_ini[:half_size,1] > self.threshold_pos).all():
+                new_label = 5
+                period = output_labels[0,2].detach().cpu().numpy()
+            else:
+                new_label = 2
+                period = np.nan
+
+            if (softmaxed_ini[half_size:,1] > self.threshold_neg).any():
+                new_label = 2
+                period = np.nan
+
+            pred = softmaxed_ini[:half_size,1].median().detach().cpu().numpy()
+        else:
+            if (softmaxed_ini[:,1] > self.threshold_pos).all():
+                new_label = 5
+                period = output_labels[0,2].detach().cpu().numpy()
+            else:
+                new_label = 2
+                period = np.nan
+
+            pred = softmaxed_ini[:,1].median().detach().cpu().numpy()
+        # print(new_label)
+        label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
+        period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+        pred_index = self.train_loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
+        self.loader.dataset.noise_df.iat[index, label_index] = new_label
+        self.loader.dataset.noise_df.iat[index, period_index] = period
+        self.loader.dataset.noise_df.iat[index, pred_index] = pred

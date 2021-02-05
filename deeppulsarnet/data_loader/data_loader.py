@@ -62,6 +62,7 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
         len(df_noise), val_frac, kfold=kfold)
 
     if val_frac != 1:
+        print('Train set:')
         train_dataset = dataset.FilDataset(
             df.iloc[train_indices], df_noise.iloc[train_noise_indices], example_shape[0], length, 1, edge, enc_shape,
             down_factor=down_factor, nulling=nulling, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
@@ -70,10 +71,12 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
                                              batch_size=batch, num_workers=1, drop_last=True)
     else:
         train_loader = None
+
+    print('Validation set:')
     valid_dataset = dataset.FilDataset(
         df.iloc[valid_indices], df_noise.iloc[valid_noise_indices], example_shape[0], length, 0, edge, enc_shape, down_factor=down_factor, test=test,
         test_samples=test_samples, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
-        set_based=set_based, sim_prob=sim_prob, discard_labels=discard_labels)
+        set_based=set_based, sim_prob=sim_prob, discard_labels=False)
     if test:
         shuffle_valid = False
     # else:

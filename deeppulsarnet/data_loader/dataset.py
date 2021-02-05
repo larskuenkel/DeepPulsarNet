@@ -28,14 +28,20 @@ class FilDataset(data_utils.Dataset):
             self.edge = [edge[0],edge[0]]
         elif len(edge)==2:
             self.edge = edge
-        print(self.edge)
+        # print(self.edge)
         self.test = test
 
         self.noise_df = df_noise.copy()
 
         self.noise_df['Ini Label'] = self.noise_df['Label'].copy()
+
+        noise_psr = np.count_nonzero((self.noise_df['Label'].to_numpy()%2)==1)
+        noise_nopsr = np.count_nonzero((self.noise_df['Label'].to_numpy()%2)==0)
+
         if discard_labels:
             self.noise_df['Label'] = 2
+
+        print(f"Obs set: Noise: {noise_nopsr}; PSR: {noise_psr}")
 
         #self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 2]
         self.noise = (0.3, 2)
@@ -308,3 +314,32 @@ def check_range(dm_range, val):
         if val >=dm_range[0,k] and val <= dm_range[1,k]:
             indexes.append(k)
     return indexes
+
+def load_file_for_prediction(file, length, edge, chunks=2, reverse=True):
+    # Load a pulsar_observation
+    
+    batch_size = chunks
+    if reverse == True:
+        batch_size *= 2
+
+    current_file = reader(file)
+    start, nsamps = choose_start(1, current_file, length, 0)
+    current_data = current_file.readBlock(0, int(current_file.header['nsamples']))#.T
+
+    if edge[1]:
+        current_data = current_data[edge[0]:edge[1], :]
+    else:
+        current_data = current_data[edge[0]:, :]
+
+    file_length = current_data.shape[1]
+    actual_length = min(file_length, length)
+    
+    data_array = np.zeros((batch_size, current_data.shape[0], actual_length))
+    start_vals = np.linspace(
+            0, file_length - actual_length, chunks, dtype=int)
+    for (i, start) in zip(range(chunks), start_vals):
+        data_array[i, :, :] = current_data[:, start:start + actual_length]
+        if reverse:
+            data_array[i+chunks, :, :] = data_array[i, :, ::-1]
+
+    return torch.Tensor(data_array)

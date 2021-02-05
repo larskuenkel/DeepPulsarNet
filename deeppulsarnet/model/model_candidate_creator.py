@@ -113,8 +113,10 @@ class candidate_creator(nn.Module):
             if target is not None:
                 target_repeated = target_repeated[converted[:, 1]
                                                   > self.candidate_threshold, :]
-        target_repeated = torch.cat(
-            (target_repeated, target_repeated[:, 2:3]), 1)
+
+        if target is not None:
+            target_repeated = torch.cat(
+                (target_repeated, target_repeated[:, 2:3]), 1)
 
         if output.shape[0] > 0 and target is not None:
             for i in range(output.shape[0]):

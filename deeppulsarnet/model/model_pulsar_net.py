@@ -341,7 +341,7 @@ class pulsar_net(nn.Module):
             learn_rate_1 = lr[1]
 
         learn_rate_2 = learn_rate_1 * lr[2]
-        print(learn_rate_2)
+        # print(learn_rate_2)
 
         # encoder_params = list(self.encoder.network[freeze:].parameters())
         # if self.use_tcn:

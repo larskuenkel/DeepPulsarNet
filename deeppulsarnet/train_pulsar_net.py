@@ -146,6 +146,11 @@ def main():
                         help='Simulation probability when set_based is used.')
     parser.add_argument('--relabel_set', action='store_true',
                         help='Correct labels in the observation set when the network thinks it sees a pulsar.')
+    parser.add_argument('--relabel_set_slow', action='store_true',
+                        help='Alternative mode for relabelling.')
+    parser.add_argument('--relabel_thresholds', type=int, nargs=2,
+                        default=[0.85, 0.5], help='Relabel threshold. If the softmax is above the first value, the label changes to pulsar;\
+                        If it is above the second value when the reverse is used it is not labelled as a pulsar.')
     parser.add_argument('--discard_labels', action='store_true',
                         help='Discard all labels in the observation set.')
     parser.add_argument('--reverse_batch', action='store_true',
@@ -264,6 +269,7 @@ def main():
     if args.model:
         net = torch.load(
             './trained_models/{}'.format(args.model)).to(device)
+        net.device = device
         net.set_mode(args.mode)
         example_shape = net.input_shape
         example_shape_altered = example_shape
@@ -332,6 +338,7 @@ def main():
                          added_cands=args.added_cands, psr_cands=args.psr_cands,
                          cands_threshold=args.cands_threshold).to(device)
         net.edge = train_loader.dataset.edge
+        net.device = device
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)
 
@@ -366,7 +373,8 @@ def main():
                                     1],
                                 acc_grad=args.acc_grad,
                                 loss_pool_mse=args.loss_pool_mse,
-                                relabel_set=args.relabel_set)
+                                relabel_set=args.relabel_set,
+                                relabel_thresholds=args.relabel_thresholds)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
@@ -382,6 +390,8 @@ def main():
         loss_train = train_net.run(
             'train', args.loops, only_class=args.no_reg, print_progress=args.progress,
             reverse_batch=args.reverse_batch)
+        if args.relabel_set_slow and epoch > 0 and epoch % 4==0:
+            train_net.label_set('train', print_progress=args.progress)
         reg_loss_train = train_net.logger.loss_meter.value()[0]
         clas_loss_train = train_net.logger.loss_meter_2.value()[0]
         im_loss_train = train_net.logger.loss_meter_3.value()[0]
@@ -432,7 +442,7 @@ def main():
         # if train_net.net.mode=='full' or train_net.net.mode=='classifier':
         #     if not class_ok and epoch % 1 == 0 and len(train_net.net.classifiers):
         #         class_ok = train_net.check_classifier()
-        if args.relabel_set:
+        if args.relabel_set or args.relabel_set_slow:
             if train_net.valid_loader is not None:
                 val_df = train_net.valid_loader.dataset.noise_df
             else:

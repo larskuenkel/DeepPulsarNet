@@ -351,18 +351,19 @@ class logger():
             mcc_train = cm_train.MCC[1]
             tp_train = cm_train.TP[1]
             fp_train = cm_train.FP[1]
-            out_string = f'Train: MCC: {mcc_train} (TP: {tp_train}; FP: {fp_train}) |'
+            mcc_float = mcc_train if not mcc_train == 'None' else 0
+            out_string = f'Train: MCC: {mcc_float:.2f} (TP: {tp_train}; FP: {fp_train}) |'
         except KeyError:
             out_string = f'Train: Only Noise |'
-        if val_set is not None:
-            try:
-                cm_val = pycm.ConfusionMatrix(val_set['Ini Label'].to_numpy() % 2, val_set['Label'].to_numpy() % 2)
-                mcc_val = cm_val.MCC[1]
-                tp_val = cm_val.TP[1]
-                fp_val = cm_val.FP[1]
-                out_string += f'Validation: MCC: {mcc_val} (TP: {tp_val}; FP: {fp_val})'
-            except:
-                out_string += f'Validation: Only Noise'
+        # if val_set is not None:
+        #     try:
+        #         cm_val = pycm.ConfusionMatrix(val_set['Ini Label'].to_numpy() % 2, val_set['Label'].to_numpy() % 2)
+        #         mcc_val = cm_val.MCC[1]
+        #         tp_val = cm_val.TP[1]
+        #         fp_val = cm_val.FP[1]
+        #         out_string += f'Validation: MCC: {mcc_val} (TP: {tp_val}; FP: {fp_val})'
+        #     except:
+        #         out_string += f'Validation: Only Noise'
 
         # else:
         #     try:
@@ -378,10 +379,10 @@ class logger():
 
         print(out_string)
         train_set.to_csv(
-                f'./results/train_{name}.csv')
-        if val_set is not None:
-            val_set.to_csv(
-                f'./results/valid_{name}.csv')
+                f'./results/{name}_train.csv')
+        # if val_set is not None:
+        #     val_set.to_csv(
+        #         f'./results/{name}_valid.csv')
 
 def conv_mat_to_dict(mat):
     mat = mat.astype(int)
