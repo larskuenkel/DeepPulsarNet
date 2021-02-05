@@ -9,7 +9,7 @@ import torch.nn.functional as F
 class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
-                 loss_weights=(0.001, 0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
+                 loss_weights_ini=(0.001, 1, 1, 1), loss_weights=(0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
                  loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5]):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -26,6 +26,9 @@ class trainer():
         self.train_mode = 0
         self.crop = self.net.crop
         self.loss_weights = loss_weights
+        self.loss_weights_ini = loss_weights_ini
+
+        self.used_loss_weights = self.loss_weights_ini
         self.train_single = train_single
         # self.fft_scale = 0.0001
         self.acf_scale = 0.01
@@ -355,6 +358,7 @@ class trainer():
                                 self.lr, decay, freeze)
                             self.net.save_noise(self.noise[:])
                             self.logger.reset_best_values()
+                            self.used_loss_weights = self.loss_weights
                         # for child in self.net.modules():
                         #     if isinstance(child, torch.nn.BatchNorm1d):
                         #         # child.reset_running_stats()
@@ -449,10 +453,10 @@ class trainer():
 
     def calc_loss(self, output_im, target_im, output_clas, target_clas, only_class=0, single_class=None):
 
-        reg_factor = self.loss_weights[0]
-        clas_factor = self.loss_weights[1]
-        autoenc_factor = self.loss_weights[2]
-        single_weight = self.loss_weights[3]
+        # reg_factor = self.used_loss_weights[0]
+        clas_factor = self.used_loss_weights[0]
+        autoenc_factor = self.used_loss_weights[1]
+        single_weight = self.used_loss_weights[2]
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
@@ -588,7 +592,7 @@ class trainer():
 
     def calc_cand_loss(self, cand_data):
 
-        weight_factor = self.loss_weights[4]
+        weight_factor = self.used_loss_weights[3] * self.used_loss_weights[0]
         output = cand_data[0][:,:2]
         target = torch.fmod(cand_data[1][:,2],2).long()
 
@@ -657,7 +661,7 @@ class trainer():
                     self.train_loader.dataset.noise_df.iat[psr, period_index] = new_period
 
             if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
-                self.loader.dataset.noise_df["Pulsar Prediction"] = -1
+                self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
             pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
 
             for (pred, obs_index) in zip(softmax_pred_np, obs_index_np):
@@ -719,7 +723,7 @@ class trainer():
     def relabel_slow(self, output_labels, index, reverse=True):
 
         if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
-            self.loader.dataset.noise_df["Pulsar Prediction"] = -1
+            self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
 
 
         softmaxed_ini = F.softmax(output_labels[:,:2], 1)

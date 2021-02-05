@@ -95,9 +95,12 @@ def main():
                         default=[0, 2000], help='Range of DM.')
     # parser.add_argument('--shift', action='store_true',
     #                     help='Shift the target according to the DM. currently broken.')
-    parser.add_argument('--loss_weights', type=float, nargs=5,
-                        default=(0.001, 0.001, 1, 1, 1), help='Loss weights. [regression, classification, reconstruction, single_classifiers, candidates]\
-                        regression not used currently')
+    parser.add_argument('--loss_weights_ini', type=float, nargs=4,
+                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates]')
+    parser.add_argument('--loss_weights', type=float, nargs=4,
+                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates]')
     parser.add_argument('--train_single', action='store_false',
                         help='Do not learn individual classifiers in multi class, only learn the combined result.')
     parser.add_argument('--gauss', type=float, nargs=4,
@@ -202,7 +205,7 @@ def main():
                 if old_type is int:
                     setattr(model_para, para_name, int(split_para[1].strip()))
                 elif old_type is float:
-                    setattr(model_para, para_name, float(split_para[1].strip))
+                    setattr(model_para, para_name, float(split_para[1].strip()))
                 elif old_type is list:
                     setattr(model_para, para_name, split_para[1:])
                 elif old_type is str:
@@ -368,7 +371,8 @@ def main():
 
     train_net = trainer.trainer(net, train_loader, valid_loader, test_loader, logging,
                                 device, args.noise, args.threshold, args.l,
-                                loss_weights=args.loss_weights, train_single=args.train_single,
+                                loss_weights_ini=args.loss_weights_ini, loss_weights=args.loss_weights,
+                                train_single=args.train_single,
                                 test_frac=args.test_samples[
                                     1],
                                 acc_grad=args.acc_grad,
