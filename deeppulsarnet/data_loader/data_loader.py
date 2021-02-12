@@ -4,6 +4,7 @@ import numpy as np
 import torch.utils.data as data_utils
 import sys
 from sigpyproc.Readers import FilReader as reader
+import torch
 
 
 def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_period=0, mean_dm=0, mean_freq=0, val_frac=0.2, test=False, enc_shape=(1, 1000), down_factor=4,
@@ -28,10 +29,9 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     df_noise_noise = df_noise[df_noise['Label'] == 2]
     df_noise_psr = df_noise[df_noise['Label'] == 3]
 
-    example_shape, data_resolution = load_example(df, length, edge)
-    if mean_period and mean_dm:
-        print("Using existing mean period and dm: {} {}".format(
-            mean_period, mean_dm))
+    example_shape, data_resolution = load_example(df_noise, length, edge)
+    if test:
+        pass
     else:
         # means = df.mean()
         # mean_period = means['P0']
@@ -42,11 +42,12 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     # df['P0'] = df['P0'] / mean_period
     # df['DM'] = df['DM'] / mean_dm
 
-    df['f0'] = 1 / df['P0']
-    if not mean_freq:
+    try:
+        df['f0'] = 1 / df['P0']
         mean_freq = df['f0'].mean()
-    # df['f0'] = df['f0'] / mean_freq
-    # print(df['f0'][:10])
+    except KeyError:
+        mean_freq -1
+        pass
 
     if test == False:
         dm_min = df['DM'].min()
@@ -167,3 +168,8 @@ def load_example(df, length, edge):
             data_resolution = float(fil.header['tsamp'])
             break
     return example_file.shape, data_resolution
+
+def load_loader(name):
+    train_loader = torch.load(f'./saved_loaders/{name}_train.pt')
+    valid_loader = torch.load(f'./saved_loaders/{name}_valid.pt')
+    return train_loader, valid_loader

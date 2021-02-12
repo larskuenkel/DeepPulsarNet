@@ -151,7 +151,7 @@ def main():
                         help='Correct labels in the observation set when the network thinks it sees a pulsar.')
     parser.add_argument('--relabel_set_slow', action='store_true',
                         help='Alternative mode for relabelling.')
-    parser.add_argument('--relabel_thresholds', type=int, nargs=2,
+    parser.add_argument('--relabel_thresholds', type=float, nargs=2,
                         default=[0.85, 0.5], help='Relabel threshold. If the softmax is above the first value, the label changes to pulsar;\
                         If it is above the second value when the reverse is used it is not labelled as a pulsar.')
     parser.add_argument('--discard_labels', action='store_true',
@@ -166,6 +166,14 @@ def main():
                         help='Also use a candidate at the position of the pulsar period during training.')
     parser.add_argument('--cands_threshold', type=float,
                         default=0, help='Threshold under which candidates are filtered.')
+    parser.add_argument('--stop_after_noise_update', action='store_true',
+                        help='Stops this training run after the first noise update.')
+    parser.add_argument('--save_loader', action='store_true',
+                        help='Save the loader for future training runs.')
+    parser.add_argument('--load_loader', action='store_true',
+                        help='Load loader from loaded model.')
+    parser.add_argument('--relabel_validation', action='store_true',
+                        help='Allow relabelling of validation set.')
 
     args = parser.parse_args()
 
@@ -239,16 +247,18 @@ def main():
     #  Setup loggin, plotting and create data
     logging = logger.logger(args.p, args.name)
 
-    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
-        args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
-        snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
-        set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
+    if args.load_loader and args.model:
+        train_loader, valid_loader = data_loader.load_loader(args.model.split('.pt')[0])
+    else:
+        train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
+            args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
+            snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
+            dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+            set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
     if args.path_test != '' or args.use_val_as_test:
-        _, test_loader, _, _, _, _, _ = data_loader.create_loader(
-            args.path_test, None, 0, length, 1, args.edge,
-            mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
+        _, test_loader, _, _, _, _, _, _ = data_loader.create_loader(
+            None, args.path_test, 0, length, 1, args.edge, val_frac=1, test=True, test_samples=int(args.test_samples[0]), set_based=True, sim_prob=0,
             df_val_test=df_for_test)
         if args.add_test_to_train:
             df_test = test_loader.dataset.df
@@ -261,11 +271,6 @@ def main():
     else:
         test_loader = None
 
-    # print('Data shape: {}'.format(example_shape))
-    (channels, real_length) = example_shape
-    example_shape_altered = example_shape
-    if real_length != length:
-        print('Example file short than expected! No padding implemented yet.')
 
     print('Train samples: {}'.format(len(train_loader.dataset)))
 
@@ -333,6 +338,10 @@ def main():
         if args.noise[3] == 1:
             args.noise = net.noise
     else:
+        (channels, real_length) = example_shape
+        example_shape_altered = example_shape
+        if real_length != length:
+            print('Example file short than expected! No padding implemented yet.')
         net = pulsar_net(model_para, example_shape, args.l, mode=args.mode,
                          clamp=args.clamp, gauss=args.gauss,
                          cmask=args.cmask, rfimask=args.rfimask, dm0_class=args.dm0_class,
@@ -364,7 +373,8 @@ def main():
     #     w.add_graph(net, (dummy_input,))
     net.train()
     net.save_noise(args.noise[:])
-    net.save_mean_vals(mean_period, mean_dm, mean_freq)
+    if not args.load_loader:
+        net.save_mean_vals(mean_period, mean_dm, mean_freq)
     print('Noise: {}'.format(net.noise))
     train_loader.dataset.noise = net.noise
     valid_loader.dataset.noise = net.noise
@@ -378,7 +388,8 @@ def main():
                                 acc_grad=args.acc_grad,
                                 loss_pool_mse=args.loss_pool_mse,
                                 relabel_set=args.relabel_set,
-                                relabel_thresholds=args.relabel_thresholds)
+                                relabel_thresholds=args.relabel_thresholds,
+                                relabel_validation=args.relabel_validation)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
@@ -394,16 +405,18 @@ def main():
         loss_train = train_net.run(
             'train', args.loops, only_class=args.no_reg, print_progress=args.progress,
             reverse_batch=args.reverse_batch)
-        if args.relabel_set_slow and epoch > 0 and epoch % 4==0:
-            train_net.label_set('train', print_progress=args.progress)
         reg_loss_train = train_net.logger.loss_meter.value()[0]
         clas_loss_train = train_net.logger.loss_meter_2.value()[0]
         im_loss_train = train_net.logger.loss_meter_3.value()[0]
+        if args.relabel_set_slow and epoch > 0 and epoch % 4==0:
+            train_net.label_set('train', print_progress=args.progress)
         loss_valid = train_net.run(
             'validation', args.loops, only_class=args.no_reg, print_progress=args.progress)
         reg_loss = train_net.logger.loss_meter.value()[0]
         clas_loss = train_net.logger.loss_meter_2.value()[0]
         im_loss = train_net.logger.loss_meter_3.value()[0]
+        if args.relabel_set_slow and epoch > 0 and epoch % 4==0 and args.relabel_validation:
+            train_net.label_set('validation', print_progress=args.progress)
         if test_loader is not None:
             loss_test = train_net.run(
                 'test', 1, only_class=1, print_progress=args.progress)
@@ -459,6 +472,14 @@ def main():
             #     args.ffa_test, args.name, 4, crop=train_net.crop, verbose=0, train_net=train_net)
             # train_net.logger.save_ffa_values(ffa_count, non_detec)
             pass
+
+        if train_net.last_noise_update == epoch and args.stop_after_noise_update:
+            print('Stopped after first noise update.')
+            break
+
+        if args.save_loader:
+            torch.save(train_loader, f'./saved_loaders/{args.name}_train.pt')
+            torch.save(train_loader, f'./saved_loaders/{args.name}_valid.pt')
 
     with open("../log_training_runs.txt", "a") as myfile:
         myfile.write("\n #{} \n {:.2f}   {} {}  {:} FFA: {}".format(

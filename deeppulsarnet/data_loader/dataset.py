@@ -90,6 +90,7 @@ class FilDataset(data_utils.Dataset):
             else:
                 labels = np.append(labels, -1)
                 noise_file = ''
+                noise_file_index = -1
             if self.use_precomputed_output:
                 # if not 'J' in name:
                 target_file = self.df.iloc[idx]['MaskName']
@@ -237,7 +238,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             else:
                 return data_array[edge[0]:-edge[1], :], target_array
     else:
-        current_file = reader(file)
+        current_file = reader(noise)
         samples = test_samples
         current_data = current_file.readBlock(0, int(current_file.header['nsamples']))#.T
         file_length = current_data.shape[1]

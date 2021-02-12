@@ -168,10 +168,10 @@ class logger():
                         self.conf_val[1] = float(mcc)
                 # conf_string += ' ' + \
                 #     np.array2string(conf_val, precision=2, floatmode='fixed')
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} [{}]{}|Time: {:.2f}'.format(
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} {} [{}]{}|Time: {:.2f}'.format(
                 epoch, lr, loss_train, loss_valid,  
                                   clas_loss_train, im_loss_train,
-                                  clas_loss, im_loss, loss_test, conf_string, mat_string, cand_string, self.time_meter.value()))
+                                  clas_loss, im_loss, loss_test, conf_string, conf_string_split, mat_string, cand_string, self.time_meter.value()))
         self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc, self.last_train_mcc, self.last_train_mcc_sim, self.last_valid_mcc_sim])
         #print(np.nansum((reg_loss, clas_loss)))
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
@@ -315,6 +315,8 @@ class logger():
 
             #Only use candidates with real pulsars and do not not look at candidates created with psr_cands
             cand_array_filtered = cand_array[(cand_array[:,11]==3)&(cand_array[:,5]!=3)]
+
+            print(cand_array_filtered)
 
             files = np.unique(cand_array_filtered[:,6])
             num_files = len(files)
