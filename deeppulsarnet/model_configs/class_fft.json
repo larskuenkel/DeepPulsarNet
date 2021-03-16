@@ -10,5 +10,7 @@
 	"norm" : false,
 	"nn_layers" : 1,
 	"height_dropout" : 0,
-	"harmonic_downsample" : false
+	"harmonic_downsample" : false,
+	"train_harmonic": false,
+	"combine_harm": false
 }

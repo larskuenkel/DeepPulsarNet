@@ -22,7 +22,7 @@ def main():
 
     # cuda = 1  # use cuda (1) or not (0)
     # torch.backends.cudnn.benchmark=True
-    print(f"Cuda available: {torch.cuda.is_available()}")
+    print(f"Cuda available: {torch.cuda.is_available()}; PyTorch version: {torch.__version__}")
     if torch.cuda.is_available():
         cuda = 1
     else:
@@ -95,8 +95,12 @@ def main():
                         default=[0, 2000], help='Range of DM.')
     # parser.add_argument('--shift', action='store_true',
     #                     help='Shift the target according to the DM. currently broken.')
+    parser.add_argument('--loss_weights_ini', type=float, nargs=4,
+                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates]')
     parser.add_argument('--loss_weights', type=float, nargs=4,
-                        default=(0.001, 0.001, 1, 1), help='Loss weights. [regression, classification, autoencoder, single_classifiers]')
+                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates]')
     parser.add_argument('--train_single', action='store_false',
                         help='Do not learn individual classifiers in multi class, only learn the combined result.')
     parser.add_argument('--gauss', type=float, nargs=4,
@@ -107,7 +111,7 @@ def main():
                         default=[5, 0.25], help='Samples that are used for the test classification \
                         and fraction that is needed for positive classification.')
     parser.add_argument('--nulling', type=float, nargs=8,
-                        default=[0, 0, 0, 0, 0, 0, 0, 0], help='Null a part of the training signal. [chunk_max, length, length deviation,\
+                        default=[0, 0, 0, 0, 0, 0, 0, 0], help='Null a part of the training signal. Not implemented currently .[chunk_max, length, length deviation,\
                         use_specaug_psr,use_specaug_combined,num,freq_para,time_para]')
     parser.add_argument('--use_val_as_test', action='store_true',
                         help='Use validation noise also for test set.')
@@ -145,10 +149,34 @@ def main():
                         help='Simulation probability when set_based is used.')
     parser.add_argument('--relabel_set', action='store_true',
                         help='Correct labels in the observation set when the network thinks it sees a pulsar.')
+    parser.add_argument('--relabel_set_slow', action='store_true',
+                        help='Alternative mode for relabelling.')
+    parser.add_argument('--relabel_thresholds', type=float, nargs=2,
+                        default=[0.85, 0.5], help='Relabel threshold. If the softmax is above the first value, the label changes to pulsar;\
+                        If it is above the second value when the reverse is used it is not labelled as a pulsar.')
+    parser.add_argument('--discard_labels', action='store_true',
+                        help='Discard all labels in the observation set.')
     parser.add_argument('--reverse_batch', action='store_true',
                         help='Reverse batch after each batch and try to predict negative.')
     parser.add_argument('--class_weight', type=float, nargs=2,
-                        default=[1,1], help='Weight of the classes.')
+                        default=[1, 1], help='Weight of the classes.')
+    parser.add_argument('--added_cands', type=int,
+                        default=0, help='Number of additional candidates per file per classifier.')
+    parser.add_argument('--psr_cands', action='store_true',
+                        help='Also use a candidate at the position of the pulsar period during training.')
+    parser.add_argument('--cands_threshold', type=float,
+                        default=0, help='Threshold under which candidates are filtered.')
+    parser.add_argument('--stop_after_noise_update', action='store_true',
+                        help='Stops this training run after the first noise update.')
+    parser.add_argument('--save_loader', action='store_true',
+                        help='Save the loader for future training runs.')
+    parser.add_argument('--load_loader', action='store_true',
+                        help='Load loader from loaded model.')
+    parser.add_argument('--relabel_validation', action='store_true',
+                        help='Allow relabelling of validation set.')
+    parser.add_argument('--noise_patience', type=int, default=3, help='Increase the noise once the threshold was reached for this many epochs.')
+    parser.add_argument('--reverse_weight', type=float,
+                        default=1, help='Weight of the reverse prediction.')
 
     args = parser.parse_args()
 
@@ -188,13 +216,19 @@ def main():
                 if old_type is int:
                     setattr(model_para, para_name, int(split_para[1].strip()))
                 elif old_type is float:
-                    setattr(model_para, para_name, float(split_para[1].strip))
+                    setattr(model_para, para_name, float(split_para[1].strip()))
                 elif old_type is list:
                     setattr(model_para, para_name, split_para[1:])
                 elif old_type is str:
                     setattr(model_para, para_name, ' '.join(split_para[1:]))
                 elif old_type is bool:
-                    setattr(model_para, para_name, split_para[1:])
+                    if split_para[1].lower() == 'true':
+                        para_val = True
+                    elif split_para[1].lower() == 'false':
+                        para_val = False
+                    else:
+                        para_val = split_para[1]
+                    setattr(model_para, para_name, para_val)
                 else:
                     print(
                         f"Parameter type not implemented yet for {changed_parameter}")
@@ -222,16 +256,23 @@ def main():
     #  Setup loggin, plotting and create data
     logging = logger.logger(args.p, args.name)
 
-    train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
-        args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
-        snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-        dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
-        set_based=args.set_based, sim_prob=args.sim_prob)
+    if args.load_loader and args.model:
+        train_loader, valid_loader = data_loader.load_loader(args.model.split('.pt')[0])
+        df_for_test = None
+    else:
+        train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
+            args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
+            snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
+            dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+            set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
     if args.path_test != '' or args.use_val_as_test:
-        _, test_loader, _, _, _, _, _ = data_loader.create_loader(
-            args.path_test, None, 0, length, 1, args.edge,
-            mean_period=mean_period, mean_freq=mean_freq, mean_dm=mean_dm, val_frac=1, test=True, test_samples=int(args.test_samples[0]),
+        if args.test_samples[0] == 1:
+            test_batch = args.batch
+        else:
+            test_batch = 1
+        _, test_loader, _, _, _, _, _, _ = data_loader.create_loader(
+            None, args.path_test, 0, length, test_batch, args.edge, val_frac=1, test=True, test_samples=int(args.test_samples[0]), set_based=True, sim_prob=0,
             df_val_test=df_for_test)
         if args.add_test_to_train:
             df_test = test_loader.dataset.df
@@ -244,17 +285,13 @@ def main():
     else:
         test_loader = None
 
-    # print('Data shape: {}'.format(example_shape))
-    (channels, real_length) = example_shape
-    example_shape_altered = example_shape
-    if real_length != length:
-        print('Example file short than expected! No padding implemented yet.')
 
     print('Train samples: {}'.format(len(train_loader.dataset)))
 
     if args.model:
         net = torch.load(
             './trained_models/{}'.format(args.model)).to(device)
+        net.device = device
         net.set_mode(args.mode)
         example_shape = net.input_shape
         example_shape_altered = example_shape
@@ -268,7 +305,8 @@ def main():
 
             # Adding new classifiers does not curently
         if args.overwrite_classifier or args.add_classifier:
-            net.create_classifier_levels(args.class_configs, no_reg=args.no_reg, overwrite=args.overwrite_classifier, dm0_class=args.dm0_class)
+            net.create_classifier_levels(args.class_configs, no_reg=args.no_reg,
+                                         overwrite=args.overwrite_classifier, dm0_class=args.dm0_class)
             net.to(device)
 
         net.reset_optimizer(args.l, decay=args.decay,
@@ -314,12 +352,19 @@ def main():
         if args.noise[3] == 1:
             args.noise = net.noise
     else:
+        (channels, real_length) = example_shape
+        example_shape_altered = example_shape
+        if real_length != length:
+            print('Example file short than expected! No padding implemented yet.')
         net = pulsar_net(model_para, example_shape, args.l, mode=args.mode,
                          clamp=args.clamp, gauss=args.gauss,
                          cmask=args.cmask, rfimask=args.rfimask, dm0_class=args.dm0_class,
                          class_configs=args.class_configs, data_resolution=data_resolution,
-                         crop=args.crop, edge=args.edge, class_weight=args.class_weight).to(device)
+                         crop=args.crop, edge=args.edge, class_weight=args.class_weight,
+                         added_cands=args.added_cands, psr_cands=args.psr_cands,
+                         cands_threshold=args.cands_threshold).to(device)
         net.edge = train_loader.dataset.edge
+        net.device = device
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)
 
@@ -342,19 +387,24 @@ def main():
     #     w.add_graph(net, (dummy_input,))
     net.train()
     net.save_noise(args.noise[:])
-    net.save_mean_vals(mean_period, mean_dm, mean_freq)
+    if not args.load_loader:
+        net.save_mean_vals(mean_period, mean_dm, mean_freq)
     print('Noise: {}'.format(net.noise))
     train_loader.dataset.noise = net.noise
     valid_loader.dataset.noise = net.noise
 
     train_net = trainer.trainer(net, train_loader, valid_loader, test_loader, logging,
                                 device, args.noise, args.threshold, args.l,
-                                loss_weights=args.loss_weights, train_single=args.train_single,
+                                loss_weights_ini=args.loss_weights_ini, loss_weights=args.loss_weights,
+                                train_single=args.train_single,
                                 test_frac=args.test_samples[
                                     1],
                                 acc_grad=args.acc_grad,
                                 loss_pool_mse=args.loss_pool_mse,
-                                relabel_set=args.relabel_set)
+                                relabel_set=args.relabel_set,
+                                relabel_thresholds=args.relabel_thresholds,
+                                relabel_validation=args.relabel_validation,
+                                reverse_weight=args.reverse_weight)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
@@ -373,11 +423,15 @@ def main():
         reg_loss_train = train_net.logger.loss_meter.value()[0]
         clas_loss_train = train_net.logger.loss_meter_2.value()[0]
         im_loss_train = train_net.logger.loss_meter_3.value()[0]
+        if args.relabel_set_slow and epoch > 0 and epoch % 4==0:
+            train_net.label_set('train', print_progress=args.progress)
         loss_valid = train_net.run(
             'validation', args.loops, only_class=args.no_reg, print_progress=args.progress)
         reg_loss = train_net.logger.loss_meter.value()[0]
         clas_loss = train_net.logger.loss_meter_2.value()[0]
         im_loss = train_net.logger.loss_meter_3.value()[0]
+        if args.relabel_set_slow and epoch > 0 and epoch % 4==0 and args.relabel_validation:
+            train_net.label_set('validation', print_progress=args.progress)
         if test_loader is not None:
             loss_test = train_net.run(
                 'test', 1, only_class=1, print_progress=args.progress)
@@ -405,7 +459,7 @@ def main():
         train_net.logger.save_best_values(
             epoch, loss_train, loss_valid, loss_test)
         train_net.update_noise(
-            epoch, args.name, decay=args.decay, freeze=freeze_val)
+            epoch, args.name, decay=args.decay, freeze=freeze_val, patience=args.noise_patience)
         if epoch % 1 == 0:
             if args.name:
                 # torch.save(train_net.net.state_dict(),
@@ -420,25 +474,32 @@ def main():
         # if train_net.net.mode=='full' or train_net.net.mode=='classifier':
         #     if not class_ok and epoch % 1 == 0 and len(train_net.net.classifiers):
         #         class_ok = train_net.check_classifier()
-        if args.relabel_set:
-            try:
-                psr_in_train = train_net.train_loader.dataset.noise_df['Label'].value_counts().loc[5]
-            except KeyError:
-                psr_in_train = 0
-            try:
-                psr_in_val = train_net.valid_loader.dataset.noise_df['Label'].value_counts().loc[5]
-            except:
-                psr_in_val = 0
-            print(f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}")
-            train_net.train_loader.dataset.noise_df.to_csv(f'./results/train_{args.name}.csv')
-            if valid_loader is not None:
-                train_net.valid_loader.dataset.noise_df.to_csv(f'./results/valid_{args.name}.csv')
+        if args.relabel_set or args.relabel_set_slow:
+            if train_net.valid_loader is not None:
+                val_df = train_net.valid_loader.dataset.noise_df
+            else:
+                val_df = None
+            train_net.logger.log_relabel(train_net.train_loader.dataset.noise_df, val_df,
+                args.name)
+        if args.path_test != '':
+        
+            train_net.test_loader.dataset.noise_df.to_csv(
+                f'./results/{args.name}_{args.path_test.split(".")[0]}.csv')
+
 
         if epoch % 1 == 0 and args.ffa_test != '':
             # ffa_count, non_detec, csv_ffa = ffa_test_whole_perf.main(
             #     args.ffa_test, args.name, 4, crop=train_net.crop, verbose=0, train_net=train_net)
             # train_net.logger.save_ffa_values(ffa_count, non_detec)
             pass
+
+        if train_net.last_noise_update == epoch and args.stop_after_noise_update:
+            print('Stopped after first noise update.')
+            break
+
+        if args.save_loader:
+            torch.save(train_loader, f'./saved_loaders/{args.name}_train.pt')
+            torch.save(train_loader, f'./saved_loaders/{args.name}_valid.pt')
 
     with open("../log_training_runs.txt", "a") as myfile:
         myfile.write("\n #{} \n {:.2f}   {} {}  {:} FFA: {}".format(

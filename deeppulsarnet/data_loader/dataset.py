@@ -11,7 +11,7 @@ class FilDataset(data_utils.Dataset):
     def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, 
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
                  dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
-                 set_based=False, sim_prob=0.5):
+                 set_based=False, sim_prob=0.5, discard_labels=False):
         self.df = df
         self.df.reset_index(drop=True, inplace=True)
         #self.df.sort_values('Unnamed: 0', inplace=True)
@@ -28,11 +28,21 @@ class FilDataset(data_utils.Dataset):
             self.edge = [edge[0],edge[0]]
         elif len(edge)==2:
             self.edge = edge
-        print(self.edge)
+        # print(self.edge)
         self.test = test
-        #  load csv file containing noise files
-        # self.noise_df = pd.read_csv('/home/lkuenkel/neural_nets/pulsar_net_noise/datasets/palfa_test_minus88.csv')
-        self.noise_df = df_noise
+
+        self.noise_df = df_noise.copy()
+
+        self.noise_df['Ini Label'] = self.noise_df['Label'].copy()
+
+        noise_psr = np.count_nonzero((self.noise_df['Label'].to_numpy()%2)==1)
+        noise_nopsr = np.count_nonzero((self.noise_df['Label'].to_numpy()%2)==0)
+
+        if discard_labels:
+            self.noise_df['Label'] = 2
+
+        print(f"Obs set: Noise: {noise_nopsr}; PSR: {noise_psr}")
+
         #self.noise_df = self.noise_df.loc[self.noise_df['Label'] == 2]
         self.noise = (0.3, 2)
         self.enc_shape = enc_shape
@@ -80,6 +90,7 @@ class FilDataset(data_utils.Dataset):
             else:
                 labels = np.append(labels, -1)
                 noise_file = ''
+                noise_file_index = -1
             if self.use_precomputed_output:
                 # if not 'J' in name:
                 target_file = self.df.iloc[idx]['MaskName']
@@ -143,7 +154,7 @@ class FilDataset(data_utils.Dataset):
 
 
 def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=(1, 1, 1), edge=[0,0], start_val=2000, test=False,
-                    labels=0, enc_length=1875, down_factor=1, dm=0, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
+                    labels=[0,0,0], enc_length=1875, down_factor=1, dm=0, test_samples=11, name='', nulling=(0, 0, 0, 0, 0, 0, 0, 0),
                     dmsplit=False, dm_indexes=0, net_out=1):
         # Load filterbank from disk with sigpyproc
     # print(file, noise, down_factor)
@@ -155,17 +166,17 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             current_data = current_file.readBlock(start, nsamps)
             orig_array = np.asarray(current_data)#.T
             data_array = orig_array
-            if nulling[0]:
-                if nulling[0] > 0:
-                    nulled_chunks = np.random.randint(nulling[0])
-                else:
-                    # For easier testing directly give chunk number
-                    nulled_chunks = - nulling[0]
-                for i in range(nulled_chunks):
-                    null_length = int(
-                        np.abs(np.random.normal(nulling[1], nulling[2])))
-                    null_start = int(np.random.randint(data_array.shape[1]))
-                    data_array[:, null_start:null_start + null_length] = 0
+            # if nulling[0]:
+            #     if nulling[0] > 0:
+            #         nulled_chunks = np.random.randint(nulling[0])
+            #     else:
+            #         # For easier testing directly give chunk number
+            #         nulled_chunks = - nulling[0]
+            #     for i in range(nulled_chunks):
+            #         null_length = int(
+            #             np.abs(np.random.normal(nulling[1], nulling[2])))
+            #         null_start = int(np.random.randint(data_array.shape[1]))
+            #         data_array[:, null_start:null_start + null_length] = 0
         if not pd.isna(noise) and noise_val != 0:
             current_noise_file = reader(noise)
             start_noise, nsamps = choose_start(
@@ -204,40 +215,18 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             max_length = current_target.shape[0] - current_target.shape[0]%down_factor
             current_target = current_target[:max_length].reshape(-1, down_factor).max(1)
 
-            # print(current_target.shape, down_factor)
             start_down = int(start / down_factor)
-            # if shift:
-            #     # shift shifts the target output according to the DM, still needs to work with data from different bandwidths
-            #     dm_shift = int(4.15 * 10**6 * (1396**-2 -
-            #                                    1443**-2) * dm / (0.64 * down_factor))
-            #     start_down -= dm_shift
 
             current_target = current_target[start_down: start_down + enc_down]
 
-            # target_array = np.asarray(current_target)[None, :]
-            # target_array = np.vstack((current_target,
-            #                         np.full(len(current_target), labels[0] - 1),
-            #                         np.full(len(current_target), labels[1] - 1))).astype('float32')
-            #orig_array /= np.max(orig_array)
-        # else:
-        #     target_array = np.zeros((1, enc_down), dtype='float32')
-            # target_array[:] = np.nan
-            # target_array[1:,:] = np.nan
             target_array = np.zeros((net_out, len(current_target)), dtype='float32')
             # print(dm_indexes, target_array.shape)
             for index in dm_indexes:
                 target_array[index, :] = current_target
-            # if len(dm_indexes):
-            #     plt.imshow(target_array[:,:500], aspect='auto')
-            #     plt.title(dm_indexes)
-            #     plt.show()
-
-            # target_array = np.vstack((current_target,
-            #                         np.full(len(current_target), labels[0] - 1),
-            #                         np.full(len(current_target), labels[1] - 1))).astype('float32')
-            #orig_array /= np.max(orig_array)
         else:
             target_array = np.zeros((net_out, enc_down), dtype='float32')
+            if labels[2] == 3 or labels[2] == 5:
+                target_array.fill(np.nan)
 
         # print(data_array.shape)
         if not edge[1] and not edge[0]:
@@ -249,7 +238,7 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             else:
                 return data_array[edge[0]:-edge[1], :], target_array
     else:
-        current_file = reader(file)
+        current_file = reader(noise)
         samples = test_samples
         current_data = current_file.readBlock(0, int(current_file.header['nsamples']))#.T
         file_length = current_data.shape[1]
@@ -264,12 +253,21 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             #     start = 0
             data_array[i, :, :] = current_data[:, start:start + actual_length]
         if not edge[1] and not edge[0]:
-            return data_array, data_array
+            if samples == 1:
+                return data_array[0,:,:], data_array[0,:,:]
+            else:
+                return data_array, data_array
         else:
             if not edge[1]:
-                return data_array[:,edge[0]:, :], data_array[:,edge[0]:, :]
+                if samples == 1:
+                    return data_array[0,edge[0]:,:], data_array[0,edge[0]:,:]
+                else:
+                    return data_array[:,edge[0]:, :], data_array[:,edge[0]:, :]
             else:
-                return data_array[:,edge[0]:-edge[1], :], data_array[:,edge[0]:-edge[1], :]
+                if samples == 1:
+                    return data_array[0,edge[0]:-edge[1],:], data_array[0,edge[0]:-edge[1],:]
+                else:
+                    return data_array[:,edge[0]:-edge[1], :], data_array[:,edge[0]:-edge[1], :]
 
 
 def grab_labels(row, index=0, set_based=0):
@@ -326,3 +324,32 @@ def check_range(dm_range, val):
         if val >=dm_range[0,k] and val <= dm_range[1,k]:
             indexes.append(k)
     return indexes
+
+def load_file_for_prediction(file, length, edge, chunks=2, reverse=True):
+    # Load a pulsar_observation
+    
+    batch_size = chunks
+    if reverse == True:
+        batch_size *= 2
+
+    current_file = reader(file)
+    start, nsamps = choose_start(1, current_file, length, 0)
+    current_data = current_file.readBlock(0, int(current_file.header['nsamples']))#.T
+
+    if edge[1]:
+        current_data = current_data[edge[0]:edge[1], :]
+    else:
+        current_data = current_data[edge[0]:, :]
+
+    file_length = current_data.shape[1]
+    actual_length = min(file_length, length)
+    
+    data_array = np.zeros((batch_size, current_data.shape[0], actual_length))
+    start_vals = np.linspace(
+            0, file_length - actual_length, chunks, dtype=int)
+    for (i, start) in zip(range(chunks), start_vals):
+        data_array[i, :, :] = current_data[:, start:start + actual_length]
+        if reverse:
+            data_array[i+chunks, :, :] = data_array[i, :, ::-1]
+
+    return torch.Tensor(data_array)

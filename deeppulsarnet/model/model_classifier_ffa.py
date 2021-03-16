@@ -107,7 +107,7 @@ class Height_conv(nn.Module):
             return output
 
 
-class regressor_ffa(nn.Module):
+class classifier_ffa(nn.Module):
     def __init__(self, input_resolution, no_reg=True, dm0_class=False,
         pooling=1, nn_layers=2, channels=8, kernel=11, norm=True, use_ampl=False, pytorch_ffa=False,
         min_period=0.09, max_period=1.1, bins_min=20, bins_max=25, remove_threshold=True, name=''):
@@ -133,6 +133,7 @@ class regressor_ffa(nn.Module):
         self.bins_max = bins_max
         self.remove_threshold = remove_threshold
         self.name = name
+        self.channel_correction = None
 
         if self.use_pytorch:
             # curently broken due to different riptide structure
@@ -187,6 +188,7 @@ class regressor_ffa(nn.Module):
         self.glob_pool = nn.AdaptiveMaxPool3d(
                 (1, 1, 1), return_indices=True)
         self.final = nn.Sequential(nn.Linear(1, self.final_output))
+        self.final_cands = nn.Sequential(nn.Linear(1, self.final_output))
 
         self.ini_final()
 
@@ -208,6 +210,12 @@ class regressor_ffa(nn.Module):
 
         if getattr(self, 'dm0_class', 0):
             out_conv = out_conv[:,:,:,:,:-1] - out_conv[:,:,:,:,-1][:,:,:,:,None]
+
+        reduce_edges = 1
+        if reduce_edges:
+            out_conv[:,:,:,:50,:] = -100
+            out_conv[:,:,:,-50:,:] = -100
+
         pooled, max_pos = self.glob_pool(out_conv)
         max_pos = max_pos[:, 0, 0, 0, 0]
         max_pos_period = max_pos // out_conv.shape[4] % out_conv.shape[3]
@@ -220,7 +228,7 @@ class regressor_ffa(nn.Module):
         periods = ffa_periods[max_pos_period * position_factor]
         output = self.final(pooled[:, :, 0, 0, 0])
         output = torch.cat((output, periods.unsqueeze(1)), dim=1)
-        return output
+        return output, (out_conv[:,0,:,:,:], ffa_periods)
 
     def ini_conv(self, mean=0, std=1):
         for child in self.conv.modules():
@@ -232,6 +240,7 @@ class regressor_ffa(nn.Module):
 
         final_para = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
         self.final[0].weight = final_para
+        self.final_cands[0].weight = final_para
         # self.final[0].weight[0,:] = - weight
         # self.final[0].weight[1,:] = + weight
 

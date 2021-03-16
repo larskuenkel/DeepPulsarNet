@@ -71,8 +71,9 @@ class pulsar_encoder(nn.Module):
         self.input_channels = input_shape[0]
         # self.dm0 = dm0
 
+        out_channels = input_shape[0]
+
         for i in range(levels):
-            # if channel_list[i] > 0:
             in_channels = int(input_shape[0]) if i == 0 else int(
                 channel_list[i - 1])
             out_channels = int(channel_list[i])
@@ -92,8 +93,18 @@ class pulsar_encoder(nn.Module):
                 layers += [TemporalBlock(out_channels, out_channels, model_para.tcn_1_kernel, stride=1, dilation=dil,
                                          groups=model_para.tcn_1_groups, residual=True, dropout=model_para.tcn_1_dropout)]
             if out_channels != model_para.tcn_2_channels:
-                layers += [nn.Conv1d(out_channels, model_para.tcn_2_channels, 1),
-                           nn.LeakyReLU()]
+                layers += [weight_norm(nn.Conv1d(out_channels, model_para.tcn_2_channels, 1)),
+                           nn.LeakyReLU(),
+                           nn.GroupNorm(model_para.tcn_2_groups, model_para.tcn_2_channels, affine=True)]
+        else:
+            if model_para.tcn_2_channels != out_channels:
+                if levels==0:
+                    conv_groups = model_para.encoder_conv_groups
+                else:
+                    conv_groups = 1
+                layers += [weight_norm(nn.Conv1d(out_channels, model_para.tcn_2_channels, 1, groups=conv_groups)),
+                           nn.LeakyReLU(),
+                           nn.GroupNorm(model_para.tcn_2_groups, model_para.tcn_2_channels, affine=True)]
 
         # if num_inputs != self.ini_channels:
         #     self.first_conv.add_module('downsample', nn.Conv1d(

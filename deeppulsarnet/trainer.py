@@ -9,8 +9,8 @@ import torch.nn.functional as F
 class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
-                 loss_weights=(0.001, 0.001, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False, bandpass=False, relabel_set =False):
+                 loss_weights_ini=(0.001, 1, 1, 1), loss_weights=(0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
+                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5], relabel_validation=False, reverse_weight=1):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -26,6 +26,9 @@ class trainer():
         self.train_mode = 0
         self.crop = self.net.crop
         self.loss_weights = loss_weights
+        self.loss_weights_ini = loss_weights_ini
+
+        self.used_loss_weights = self.loss_weights_ini
         self.train_single = train_single
         # self.fft_scale = 0.0001
         self.acf_scale = 0.01
@@ -44,6 +47,13 @@ class trainer():
 
         self.relabel_set = relabel_set
 
+        self.threshold_pos = relabel_thresholds[0]
+        self.threshold_neg = relabel_thresholds[1]
+
+        self.relabel_validation = relabel_validation
+
+        self.reverse_weight = reverse_weight
+
 
     def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False, reverse_batch=False):
         # Runs the net over the training or validation set
@@ -59,11 +69,14 @@ class trainer():
             if print_progress:
                 print(step * x.shape[0], end="\r")
 
-            if mode == 'test':
+            if mode == 'test' and len(x.shape)==4:
+                single_test_batch = True
                 x = x[0, :, :, :]
                 new_y_shape = list(y2.shape)
                 new_y_shape[0] = x.shape[0]
                 y2 = y2.expand(new_y_shape)
+            else:
+                single_test_batch = False
 
             if reverse_batch and mode == 'train':
                 batch_loops = 2
@@ -95,9 +108,10 @@ class trainer():
 
                 # ten_x.requires_grad = True
 
-                self.net.ini_target = ten_y2
-                output_image, output_classifier, output_single_class = self.net(
-                    ten_x)  # net output
+                # self.net.ini_target = ten_y2
+                output_image, output_classifier, output_single_class, candidate_data = self.net(
+                    ten_x, target=ten_y2)  # net output
+
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
 
@@ -118,9 +132,15 @@ class trainer():
 
                 loss, periods = self.calc_loss(output_image, ten_y,
                                                output_classifier, ten_y2, only_class, single_class=output_single_class)
+
+                if candidate_data[0].shape[0]>1:
+                    cand_loss = self.calc_cand_loss(candidate_data)
+                    loss = loss + cand_loss
+
+                loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
 
-                if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test:
+                if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test and single_test_batch:
                     class_result_single = output_classifier[:,
                                                             0] - output_classifier[:, 1]
                     pulsar_count = (0 > class_result_single).sum().to(torch.float)
@@ -133,7 +153,7 @@ class trainer():
                         periods = torch.mean(periods).unsqueeze(0)
                         # dummy_weights = torch.ones_like(periods)
                     else:
-                        class_soft_max = F.softmax(output_classifier[:, :2])
+                        class_soft_max = F.softmax(output_classifier[:, :2],dim=1)
                         most_secure = torch.argmax(class_soft_max[:, 1])
                         periods = output_classifier[most_secure, 2].unsqueeze(0)
 
@@ -159,15 +179,21 @@ class trainer():
 
                 if self.mode == 'train':
 
+                    if batch_loop==1:
+                        loss *= self.reverse_weight
+
                     loss.backward(retain_graph=True)
                     if step % self.acc_grad == 0:
 
                         self.net.optimizer.step()  # apply gradients
                         self.net.optimizer.zero_grad()
                 # stack results for scatter plot
+                cand_combined = torch.cat((candidate_data[0].detach().cpu(), candidate_data[1].detach().cpu()), dim=1).numpy()
                 self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
                                          ten_y2.detach().cpu().numpy().tolist(),
-                                         output_single_class.detach().cpu().numpy().tolist())
+                                         output_single_class.detach().cpu().numpy().tolist(),
+                                         cand_combined.tolist())
+
 
                 if not self.net.mode == 'dedisperse':
                     # if not self.mode == 'train':
@@ -187,11 +213,13 @@ class trainer():
                             print(
                                 '1 sample will not be included in the logged class errors.')
 
-                if self.net.epoch >= 2 and self.train_loader.dataset.set_based and self.relabel_set:
+                if self.net.epoch > 0 and self.train_loader.dataset.set_based and self.relabel_set:
                     if batch_loop==0:
-                        self.relabel_set_no_cand(ten_y2, output_classifier)
+                        self.relabel_set_no_cand(output_classifier, ten_y2)
                     else:
-                        self.relabel_set_no_cand(ten_y2, output_classifier, reverse=True)
+                        self.relabel_set_no_cand(output_classifier, ten_y2, reverse=True)
+                if self.mode =='test':
+                    self.add_test_predictions(output_classifier, ten_y2)
 
         if self.net.mode == 'dedisperse':
             final_loss = self.logger.loss_meter_3.value()[0]
@@ -250,6 +278,7 @@ class trainer():
         self.logger.out_stack = [[1, 0, 0,0,0,0,0], [0, 1, 0, 0,0,0,0]]
         self.logger.out_single_stack = []
         self.logger.target_stack = [[0, 0, 0, -1, 0, 0,0,0,0], [0, 0, 1, -1, 0, 0,0,0,0]]
+        self.logger.cand_stack = []
         # if not self.no_reg:
         #     self.logger.out_stack = [[0, 1, 0,0], [0, 0, 1,0]]
         #     self.logger.target_stack = [[0, 0, 0, -1,0], [0, 0, 1, -1,0]]
@@ -344,6 +373,7 @@ class trainer():
                                 self.lr, decay, freeze)
                             self.net.save_noise(self.noise[:])
                             self.logger.reset_best_values()
+                            self.used_loss_weights = self.loss_weights
                         # for child in self.net.modules():
                         #     if isinstance(child, torch.nn.BatchNorm1d):
                         #         # child.reset_running_stats()
@@ -438,10 +468,10 @@ class trainer():
 
     def calc_loss(self, output_im, target_im, output_clas, target_clas, only_class=0, single_class=None):
 
-        reg_factor = self.loss_weights[0]
-        clas_factor = self.loss_weights[1]
-        autoenc_factor = self.loss_weights[2]
-        single_weight = self.loss_weights[3]
+        # reg_factor = self.used_loss_weights[0]
+        clas_factor = self.used_loss_weights[0]
+        autoenc_factor = self.used_loss_weights[1]
+        single_weight = self.used_loss_weights[2]
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
@@ -464,6 +494,9 @@ class trainer():
 
                 if self.loss_pool_mse:
                     max_val_out, max_pos_out = torch.max(output_im_smooth, dim=1, keepdim=True)
+                    max_val_target, max_pos_target = torch.max(target_im_smooth, dim=1, keepdim=True)
+                    # output_im_smooth = F.adaptive_max_pool2d(output_im_smooth.unsqueeze(1), (1, output_im.shape[2]))[:,0,:,:]
+                    # target_im_smooth = F.adaptive_max_pool2d(target_im_smooth.unsqueeze(1), (1, output_im.shape[2]))[:,0,:,:]
                     loss_in_out = max_val_out
                     loss_in_target = max_val_target
                 else:
@@ -479,30 +512,34 @@ class trainer():
                 except ValueError:
                     print('Error with loss meter.')
 
-            if self.fft_loss or self.acf_loss:
-                loss_whole_im = loss_whole_im * \
-                    np.max((0, 1 - self.fft_loss - self.acf_loss))
-            if self.fft_loss:
-                # print(self.fft_loss)
-                output_fft = self.net.classifier_fft.compute_fft(
-                    output_im_smooth, harmonics=0)[:, 0, :]
-                target_fft = self.net.classifier_fft.compute_fft(
-                    target_im, harmonics=0)[:, 0, :]
-                loss_fft = self.net.loss_autoenc(
-                    output_fft, target_fft)
-                loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
+                loss_whole = loss_whole_im * autoenc_factor
+            else:
+                loss_whole = None
 
-            if self.acf_loss:
-                acf_padding = 500
-                output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
-                    0, :, :] * self.acf_scale
-                target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
-                    0, :, :] * self.acf_scale
-                loss_acf = self.net.loss_autoenc(
-                    output_acf, target_acf)
-                loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
+            # if self.fft_loss or self.acf_loss:
+            #     loss_whole_im = loss_whole_im * \
+            #         np.max((0, 1 - self.fft_loss - self.acf_loss))
+            # if self.fft_loss:
+            #     # print(self.fft_loss)
+            #     output_fft = self.net.classifier_fft.compute_fft(
+            #         output_im_smooth, harmonics=0)[:, 0, :]
+            #     target_fft = self.net.classifier_fft.compute_fft(
+            #         target_im, harmonics=0)[:, 0, :]
+            #     loss_fft = self.net.loss_autoenc(
+            #         output_fft, target_fft)
+            #     loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
 
-            loss_whole = loss_whole_im * autoenc_factor
+            # if self.acf_loss:
+            #     acf_padding = 500
+            #     output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
+            #         0, :, :] * self.acf_scale
+            #     target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
+            #         0, :, :] * self.acf_scale
+            #     loss_acf = self.net.loss_autoenc(
+            #         output_acf, target_acf)
+            #     loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
+
+
         else:
             loss_whole = None
 
@@ -557,19 +594,27 @@ class trainer():
 
                     # loss_whole += loss_1 / weight_1 * reg_factor
 
-            if not self.mode == 'test':
-                if only_class:
-                    loss_whole /= (clas_factor + autoenc_factor)
-                else:
-                    loss_whole /= (clas_factor + autoenc_factor)
-            else:
-                loss_whole /= (clas_factor)
+            # if not self.mode == 'test':
+            #     if only_class:
+            #         loss_whole /= (clas_factor + autoenc_factor)
+            #     else:
+            #         loss_whole /= (clas_factor + autoenc_factor)
+            # else:
+            #     loss_whole /= (clas_factor)
         else:
-            try:
-                loss_whole /= autoenc_factor
-            except TypeError:
+            if not loss_whole == None:
                 loss_whole = None
         return loss_whole, periods
+
+    def calc_cand_loss(self, cand_data):
+
+        weight_factor = self.used_loss_weights[3] * self.used_loss_weights[0]
+        output = cand_data[0][:,:2]
+        target = torch.fmod(cand_data[1][:,2],2).long()
+
+        cand_loss = loss_2 = self.net.loss_2(output, target) * weight_factor
+
+        return cand_loss
 
     def estimate_period(self, tensor):
         conv_factor = 0.00064 * 4
@@ -593,66 +638,139 @@ class trainer():
 
         return tensor_acf
 
-    def relabel_set_no_cand(self, target, output_labels, reverse=False):
+    def relabel_set_no_cand(self, output_labels, target, reverse=False):
 
         # print(target.shape, output_labels.shape)
-        target_nosim = target[target[:,2]!=1]
-        output_labels = output_labels[target[:,2]!=1]
+
+        if self.mode =='train' or (self.mode =='validation' and self.relabel_validation):
+            target_nosim = target[target[:,2]!=1]
+            output_labels = output_labels[target[:,2]!=1]
+            softmaxed_ini = F.softmax(output_labels[:,:2], 1)
+
+            periods = output_labels[:,2].detach()
+            target_output_labels = target_nosim[:,2]
+
+            # cand_index = target_nosim[:, 7]
+            obs_index_ini = target_nosim[:, 6]
+            obs_index_np = obs_index_ini.cpu().numpy().astype(int)
+            softmax_pred_np = softmaxed_ini[:,1].detach().cpu().numpy()
+            # obs_index = obs_index_ini[target_output_labels!=1]
+            # softmaxed = softmaxed_ini[target_output_labels!=1]
+
+            # obs_index_psrcand = obs_index_ini[cand_index==1]
+            # softmax_psrcand = softmaxed_ini[cand_index==1]
+            # periods_psrcand = periods[cand_index==1]
+
+            # obs_index_cand = obs_index_ini[cand_index==0]
+            # softmax_cand = softmaxed_ini[cand_index==0]
+            # periods_cand = periods[cand_index==0]
+
+            # label positives
+            if not reverse:
+                # threshold = 0.95
+                identified_psrs = obs_index_ini[softmaxed_ini[:,1]>self.threshold_pos].cpu().numpy().astype(int)
+                identified_periods = periods[softmaxed_ini[:,1]>self.threshold_pos].cpu().numpy()
+ 
+                label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
+                period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                for (psr, new_period) in zip(identified_psrs, identified_periods):
+                    self.loader.dataset.noise_df.iat[psr, label_index] = 5
+                    old_period = self.loader.dataset.noise_df.iat[psr, period_index]
+
+                    self.loader.dataset.noise_df.iat[psr, period_index] = new_period
+
+                if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
+                    self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
+                pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
+
+                for (pred, obs_index) in zip(softmax_pred_np, obs_index_np):
+                    self.loader.dataset.noise_df.iat[obs_index, pred_index] = pred
+
+
+            if not reverse:
+                # threshold_neg = 0.5
+                nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]<self.threshold_pos].cpu().numpy().astype(int)
+            else:
+                # threshold_non = 0.5
+                nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]>self.threshold_neg].cpu().numpy().astype(int)
+            for nonpsr in nonidentified_psrs:
+                label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
+                period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                self.loader.dataset.noise_df.iat[nonpsr, label_index] = 2
+                self.loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
+
+    def add_test_predictions(self, output_labels, target):
+        softmaxed_ini = F.softmax(output_labels[:,:2], 1)
+        softmax_pred_np = softmaxed_ini[:,1].detach().cpu().numpy()
+        obs_index_ini = target[:, 6]
+        obs_index_np = obs_index_ini.cpu().numpy().astype(int)
+        if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
+            self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
+        pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
+        for (pred, obs_index) in zip(softmax_pred_np, obs_index_np):
+            self.loader.dataset.noise_df.iat[obs_index, pred_index] = pred
+
+
+    def label_set(self, mode='train', print_progress=True):
+        self.net.eval()
+        if mode == 'train':
+            self.loader = self.train_loader
+        if mode == 'validation':
+            self.loader = self.valid_loader
+        if mode == 'test':
+            self.loader = self.test_loader
+
+        for index in range(len(self.loader.dataset.noise_df)):
+            if print_progress:
+                print(index, end="\r")
+            row = self.loader.dataset.noise_df.iloc[index]
+            file = row['FileName']
+            # target = torch.Tensor([row.loc['P0'], row.loc['DM'], 0, row.loc['Unnamed: 0'], index, -1, index]).to(self.net.device)
+
+            reverse = True
+
+            ten_x = dataset.load_file_for_prediction(file, self.loader.dataset.length, self.loader.dataset.edge, chunks=2, reverse=reverse).to(self.net.device)
+
+            output_image, output_classifier, output_single_class, candidate_data = self.net(ten_x)
+
+            self.relabel_slow(output_classifier, index, reverse=reverse)
+
+
+    def relabel_slow(self, output_labels, index, reverse=True):
+
+        if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
+            self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
+
+
         softmaxed_ini = F.softmax(output_labels[:,:2], 1)
 
-        periods = output_labels[:,2].detach()
-        target_output_labels = target_nosim[:,2]
+        if reverse:
+            half_size = softmaxed_ini.shape[0] // 2
+            if (softmaxed_ini[:half_size,1] > self.threshold_pos).all():
+                new_label = 5
+                period = output_labels[0,2].detach().cpu().numpy()
+            else:
+                new_label = 2
+                period = np.nan
 
-        # cand_index = target_nosim[:, 7]
-        obs_index_ini = target_nosim[:, 6]
-        # obs_index = obs_index_ini[target_output_labels!=1]
-        # softmaxed = softmaxed_ini[target_output_labels!=1]
+            if (softmaxed_ini[half_size:,1] > self.threshold_neg).any():
+                new_label = 2
+                period = np.nan
 
-        # obs_index_psrcand = obs_index_ini[cand_index==1]
-        # softmax_psrcand = softmaxed_ini[cand_index==1]
-        # periods_psrcand = periods[cand_index==1]
-
-        # obs_index_cand = obs_index_ini[cand_index==0]
-        # softmax_cand = softmaxed_ini[cand_index==0]
-        # periods_cand = periods[cand_index==0]
-
-        if not reverse:
-            threshold = 0.95
-            identified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold].cpu().numpy().astype(int)
-            identified_periods = periods[softmaxed_ini[:,1]>threshold].cpu().numpy()
-            if self.mode =='train':
-                label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
-                period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
-                for (psr, new_period) in zip(identified_psrs, identified_periods):
-                    self.train_loader.dataset.noise_df.iat[psr, label_index] = 5
-                    old_period = self.train_loader.dataset.noise_df.iat[psr, period_index]
-
-                    self.train_loader.dataset.noise_df.iat[psr, period_index] = new_period
-
-
-#reverse and validation not implemented... yet still true=
-            if self.mode =='validation':
-                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
-                for psr in identified_psrs:
-                    self.valid_loader.dataset.noise_df.iat[psr, label_index] = 5
-                    # print('relabelled sth')
-
-        if not reverse:
-            threshold_non = 0.5
-            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]<threshold_non].cpu().numpy().astype(int)
+            pred = softmaxed_ini[:half_size,1].median().detach().cpu().numpy()
         else:
-            threshold_non = 0.5
-            nonidentified_psrs = obs_index_ini[softmaxed_ini[:,1]>threshold_non].cpu().numpy().astype(int)
-        if self.mode =='train':
-            for nonpsr in nonidentified_psrs:
-                label_index = self.train_loader.dataset.noise_df.columns.get_loc("Label")
-                period_index = self.train_loader.dataset.noise_df.columns.get_loc("P0")
-                self.train_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
-                self.train_loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
-                # print('relabelled sth')
+            if (softmaxed_ini[:,1] > self.threshold_pos).all():
+                new_label = 5
+                period = output_labels[0,2].detach().cpu().numpy()
+            else:
+                new_label = 2
+                period = np.nan
 
-        if self.mode =='validation':
-            for nonpsr in nonidentified_psrs:
-                label_index = self.valid_loader.dataset.noise_df.columns.get_loc("Label")
-                self.valid_loader.dataset.noise_df.iat[nonpsr, label_index] = 2
-                # print('relabelled sth')
+            pred = softmaxed_ini[:,1].median().detach().cpu().numpy()
+        # print(new_label)
+        label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
+        period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+        pred_index = self.train_loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
+        self.loader.dataset.noise_df.iat[index, label_index] = new_label
+        self.loader.dataset.noise_df.iat[index, period_index] = period
+        self.loader.dataset.noise_df.iat[index, pred_index] = pred

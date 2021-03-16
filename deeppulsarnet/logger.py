@@ -68,6 +68,11 @@ class logger():
         self.best_ffa_values[1] = 100
         self.stats = []#[[0,0,0]]
 
+        self.last_train_mcc_sim = np.nan
+        self.last_train_mcc_real = np.nan
+        self.last_valid_mcc_sim = np.nan
+        self.last_valid_mcc_real = np.nan
+
     def reset_best_values(self):
         self.best_values = np.zeros(4)
         self.best_values[2] = 10**9
@@ -101,6 +106,7 @@ class logger():
         conf_string = ''
         conf_string_split = ''
         mat_string = ''
+        cand_string, cand_string_short = self.check_cand_performance()
         if len(self.conf_mat['train']) >1:
             conf_string = 'MCC: '
             for mode in self.conf_mat:
@@ -145,9 +151,9 @@ class logger():
             if epoch==0:
                 print(f"Epoch Count | Loss Rate  | Total Loss         Split Loss:|Train (class&MSE)||Valid(class&MSE) | MCC   Train  Valid      Train(Sim   Real) Valid(Sim   Real)")
                         # Epoch:  32 LR: 0.000500000 Train: 0.19716 Valid: 0.16227 |0.106255 0.090906||0.111256 0.051013| MCC:  0.53 | 0.75 | |Split:  0.53 | 0.68 ||Time: 26.37
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| {} |{}|Time: {:.2f}'.format(
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| {} |{}| Time: {:.2f}'.format(
                 epoch, lr, loss_train, loss_valid, 
-                                  clas_loss_train, im_loss_train, clas_loss, im_loss, conf_string,conf_string_split,  self.time_meter.value()))
+                                  clas_loss_train, im_loss_train, clas_loss, im_loss, conf_string,conf_string_split, self.time_meter.value()))
             # self.last_val_mcc = 0
         else:
             if np.count_nonzero(self.confusion_meter.value()) != 0:
@@ -162,24 +168,27 @@ class logger():
                         self.conf_val[1] = float(mcc)
                 # conf_string += ' ' + \
                 #     np.array2string(conf_val, precision=2, floatmode='fixed')
-            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} [{}] Time: {:.2f}'.format(
+            print('Epoch: {:3.0f} LR: {:.9f} Train: {:.5f} Valid: {:.5f} |{:.6f} {:.6f}||{:.6f} {:.6f}| Test: {:.5f} {} {} [{}] Time: {:.2f}'.format(
                 epoch, lr, loss_train, loss_valid,  
                                   clas_loss_train, im_loss_train,
-                                  clas_loss, im_loss, loss_test, conf_string, mat_string, self.time_meter.value()))
+                                  clas_loss, im_loss, loss_test, conf_string, conf_string_split, mat_string, self.time_meter.value()))
+        if cand_string != '':
+            print(f'{cand_string}')
         self.values.append([epoch, loss_train, loss_valid, np.nansum((clas_loss)), loss_test, self.last_val_mcc, self.last_train_mcc, self.last_train_mcc_sim, self.last_valid_mcc_sim])
         #print(np.nansum((reg_loss, clas_loss)))
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
-            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.5f} {} {} {} {}".format(
-                epoch, noise[0], loss_train, loss_valid, clas_loss, im_loss, loss_test, conf_string, conf_string_split, mat_string))
+            myfile.write("\n {:.2f} {:.5} {:.5f} {:.6f} {:.6f} {:.5f} {} {} {} {} {}".format(
+                epoch, noise[0], loss_train, loss_valid, clas_loss, im_loss, loss_test, conf_string, conf_string_split, mat_string, cand_string_short))
 
     def log_command(self, command):
         with open("./logs/log_{}.txt".format(self.name), "a") as myfile:
-            myfile.write("\n {}".format(command))
+            myfile.write("\n # {}".format(command))
 
-    def stack_output(self, output, target, single_out):
+    def stack_output(self, output, target, single_out, cands):
         self.out_stack.extend(output)
         self.out_single_stack.extend(single_out)
         self.target_stack.extend(target)
+        self.cand_stack.extend(cands)
 
     def plot_regressor(self, mode):
         if self.plot:
@@ -301,6 +310,92 @@ class logger():
             # except AssertionError:
             #     print('Error while ploting scatter plot.')
             #     print(out_class)
+
+    def check_cand_performance(self):
+        if len(self.cand_stack)>1:
+            cand_array = np.asarray(self.cand_stack)
+
+            #Only use candidates with real pulsars and do not not look at candidates created with psr_cands
+            cand_array_filtered = cand_array[(cand_array[:,11]==3)&(cand_array[:,5]!=3)]
+
+            # print(cand_array_filtered.shape)
+
+            files = np.unique(cand_array_filtered[:,6])
+            num_files = len(files)
+            if not num_files==0:
+
+                good_cands = 0
+                all_cands = 0
+                for file in files:
+                    cands_trunc = cand_array_filtered[cand_array_filtered[:,6]==file]
+                    # print(cands_trunc)
+                    # All candidates where the target is supposedly the pulsar
+                    psr_cands = cands_trunc[cands_trunc[:,5]==1]
+
+                    # print(psr_cands)
+                    cands = np.sum(psr_cands[:,5]==1)
+                    if cands != 0:
+                        all_cands += 1
+
+                    # All candidates where the candidates is positive
+                    pos_cands = np.sum((psr_cands[:,1]-psr_cands[:,0])>=0)
+
+                    if pos_cands != 0:
+                        good_cands += 1
+                out_string = f'Val PSR: {num_files}|In Cands: {all_cands}| Detec: {good_cands}'
+                short_string = f'| {num_files} {all_cands} {good_cands}'
+            else:
+                out_string = ''
+                short_string = ''
+        else:
+            out_string = ''
+            short_string = ''
+        return out_string, short_string
+
+    def log_relabel(self, train_set, val_set, name):
+
+        cm_train = pycm.ConfusionMatrix(train_set['Ini Label'].to_numpy() % 2, train_set['Label'].to_numpy() % 2)
+        # print(cm_train)
+        # print(train_set['Ini Label'].to_numpy(),  train_set['Label'].to_numpy())
+        try:
+            mcc_train = cm_train.MCC[1]
+            tp_train = cm_train.TP[1]
+            fp_train = cm_train.FP[1]
+            mcc_float = mcc_train if not mcc_train == 'None' else 0
+            out_string = f'Train: MCC: {mcc_float:.2f} (TP: {tp_train}; FP: {fp_train}) |'
+        except:
+            unique, counts = np.unique(train_set['Label'].to_numpy() % 2, return_counts=True)
+            out_string = f'Train:'
+            for (i,j) in zip(unique, counts):
+                out_string += f'{unique}:{counts}'
+        # if val_set is not None:
+        #     try:
+        #         cm_val = pycm.ConfusionMatrix(val_set['Ini Label'].to_numpy() % 2, val_set['Label'].to_numpy() % 2)
+        #         mcc_val = cm_val.MCC[1]
+        #         tp_val = cm_val.TP[1]
+        #         fp_val = cm_val.FP[1]
+        #         out_string += f'Validation: MCC: {mcc_val} (TP: {tp_val}; FP: {fp_val})'
+        #     except:
+        #         out_string += f'Validation: Only Noise'
+
+        # else:
+        #     try:
+        #         psr_in_train = train_set.value_counts().loc[5]
+        #     except KeyError:
+        #         psr_in_train = 0
+        #     try:
+        #         psr_in_val = val_set.value_counts().loc[5]
+        #     except:
+        #         psr_in_val = 0
+
+            # out_string = f"Train PSR: {psr_in_train}, Validation PSR: {psr_in_val}"
+
+        print(out_string)
+        train_set.to_csv(
+                f'./results/{name}_train.csv')
+        # if val_set is not None:
+        #     val_set.to_csv(
+        #         f'./results/{name}_valid.csv')
 
 def conv_mat_to_dict(mat):
     mat = mat.astype(int)

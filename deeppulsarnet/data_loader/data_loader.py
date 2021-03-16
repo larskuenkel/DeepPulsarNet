@@ -4,11 +4,12 @@ import numpy as np
 import torch.utils.data as data_utils
 import sys
 from sigpyproc.Readers import FilReader as reader
+import torch
 
 
 def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_period=0, mean_dm=0, mean_freq=0, val_frac=0.2, test=False, enc_shape=(1, 1000), down_factor=4,
                   snr_range=[0, 0], test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0, 0), shuffle_valid=True, val_test=False, df_val_test=None, kfold=-1,
-                  dmsplit=False, net_out=1, dm_range=[0, 2000], dm_overlap=0.25, set_based=False, sim_prob=0.5):
+                  dmsplit=False, net_out=1, dm_range=[0, 2000], dm_overlap=0.25, set_based=False, sim_prob=0.5, discard_labels=False):
         # Create train and validation loader
 
     if set_based:
@@ -28,10 +29,9 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     df_noise_noise = df_noise[df_noise['Label'] == 2]
     df_noise_psr = df_noise[df_noise['Label'] == 3]
 
-    example_shape, data_resolution = load_example(df, length, edge)
-    if mean_period and mean_dm:
-        print("Using existing mean period and dm: {} {}".format(
-            mean_period, mean_dm))
+    example_shape, data_resolution = load_example(df_noise, length, edge)
+    if test:
+        pass
     else:
         # means = df.mean()
         # mean_period = means['P0']
@@ -42,11 +42,12 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     # df['P0'] = df['P0'] / mean_period
     # df['DM'] = df['DM'] / mean_dm
 
-    df['f0'] = 1 / df['P0']
-    if not mean_freq:
+    try:
+        df['f0'] = 1 / df['P0']
         mean_freq = df['f0'].mean()
-    # df['f0'] = df['f0'] / mean_freq
-    # print(df['f0'][:10])
+    except KeyError:
+        mean_freq -1
+        pass
 
     if test == False:
         dm_min = df['DM'].min()
@@ -62,18 +63,21 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
         len(df_noise), val_frac, kfold=kfold)
 
     if val_frac != 1:
+        print('Train set:')
         train_dataset = dataset.FilDataset(
             df.iloc[train_indices], df_noise.iloc[train_noise_indices], example_shape[0], length, 1, edge, enc_shape,
             down_factor=down_factor, nulling=nulling, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
-            set_based=set_based, sim_prob=sim_prob)
+            set_based=set_based, sim_prob=sim_prob, discard_labels=discard_labels)
         train_loader = data_utils.DataLoader(train_dataset, shuffle=True,
                                              batch_size=batch, num_workers=1, drop_last=True)
     else:
         train_loader = None
+
+    print('Validation set:')
     valid_dataset = dataset.FilDataset(
         df.iloc[valid_indices], df_noise.iloc[valid_noise_indices], example_shape[0], length, 0, edge, enc_shape, down_factor=down_factor, test=test,
         test_samples=test_samples, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
-        set_based=set_based, sim_prob=sim_prob)
+        set_based=set_based, sim_prob=sim_prob, discard_labels=False)
     if test:
         shuffle_valid = False
     # else:
@@ -164,3 +168,8 @@ def load_example(df, length, edge):
             data_resolution = float(fil.header['tsamp'])
             break
     return example_file.shape, data_resolution
+
+def load_loader(name):
+    train_loader = torch.load(f'./saved_loaders/{name}_train.pt')
+    valid_loader = torch.load(f'./saved_loaders/{name}_valid.pt')
+    return train_loader, valid_loader
