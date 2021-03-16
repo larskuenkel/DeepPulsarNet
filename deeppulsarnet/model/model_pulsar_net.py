@@ -75,7 +75,7 @@ class pulsar_net(nn.Module):
             self.cand_based = False
 
         self.set_preprocess(self.input_shape, model_para.initial_norm,
-                            bias=clamp[0], clamp=clamp[1:], dm0=model_para.subtract_dm0,
+                            bias=clamp[0], clamp=clamp[1:], dm0_subtract=model_para.subtract_dm0,
                             groups=model_para.initial_norm_groups, cmask=cmask, rfimask=rfimask)
 
         if not model_para.concat_dm0:
@@ -438,10 +438,10 @@ class pulsar_net(nn.Module):
         # plt.show()
         return smoothed[:, 0, :, :]
 
-    def set_preprocess(self, input_shape, norm, bias=65, clamp=[-10, 10], dm0='none',
+    def set_preprocess(self, input_shape, norm, bias=65, clamp=[-10, 10], dm0_subtract=False,
                        groups=1, cmask=False, rfimask=False):
         self.preprocess = Preprocess(
-            input_shape, norm, bias=bias, clamp=clamp, dm0=dm0,
+            input_shape, norm, bias=bias, clamp=clamp, dm0_subtract=dm0_subtract,
             groups=groups, cmask=cmask, rfimask=rfimask)
 
     def append_dm0(self, ini_fil, out_dedis, down_fac=4):

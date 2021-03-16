@@ -98,7 +98,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
         stft_count = 0
         switch_harm = 0
         stft = torch.stft(x[:, j, :], length, hop_length=hop_length, win_length=None,
-                          window=None, center=False, normalized=True, onesided=True)
+                          window=None, center=False, normalized=True, onesided=True,return_complex=False)
 
         power_stft = stft[:, :crop, :, 0] ** 2 + \
             stft[:, :crop, :, 1] ** 2

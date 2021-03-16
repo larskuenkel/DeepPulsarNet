@@ -6,14 +6,14 @@ import torch
 
 class Preprocess(nn.Module):
     # Preprocessing module
-    def __init__(self, input_shape, norm, bias=0, clamp=[-1000, 1000], dm0='none', groups=1, cmask=False, rfimask=False):
+    def __init__(self, input_shape, norm, bias=0, clamp=[-1000, 1000], dm0_subtract=False, groups=1, cmask=False, rfimask=False):
         super().__init__()
 
         self.input_shape = input_shape
         self.bias = bias
         self.clamp = clamp
         self.use_norm = norm
-        self.dm0 = dm0
+        self.dm0_subtract = dm0_subtract
         self.cmask = cmask
         self.rfimask = rfimask
         if self.cmask:
@@ -23,8 +23,8 @@ class Preprocess(nn.Module):
             self.rfi_layer = RFIMaskLayer(input_shape)
 
         self.input_chan = self.input_shape[0]
-        if self.dm0 == 'cat':
-            self.input_chan += 1
+        # if self.dm0 == 'cat':
+        #     self.input_chan += 1
 
         if self.use_norm:
             self.norm = nn.GroupNorm(groups, self.input_chan)
@@ -35,12 +35,12 @@ class Preprocess(nn.Module):
         y = x - self.bias
         if self.clamp[0] or self.clamp[1]:
             y = y.clamp(*self.clamp)
-        if hasattr(self, 'dm0'):
-            if self.dm0 == 'sub':
+        if hasattr(self, 'dm0_subtract'):
+            if self.dm0_subtract:
                 y = y - y.mean(dim=1, keepdim=True)
-                # print('DM0 removed')
-            if self.dm0 == 'cat':
-                y = torch.cat((y, y.mean(dim=1).unsqueeze(1)), dim=1)
+            # print('DM0 removed', y.shape)
+            # if self.dm0 == 'cat':
+            #     y = torch.cat((y, y.mean(dim=1).unsqueeze(1)), dim=1)
 
         if hasattr(self, 'cmask'):
             if self.cmask:

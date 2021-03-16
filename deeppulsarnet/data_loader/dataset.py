@@ -253,12 +253,21 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             #     start = 0
             data_array[i, :, :] = current_data[:, start:start + actual_length]
         if not edge[1] and not edge[0]:
-            return data_array, data_array
+            if samples == 1:
+                return data_array[0,:,:], data_array[0,:,:]
+            else:
+                return data_array, data_array
         else:
             if not edge[1]:
-                return data_array[:,edge[0]:, :], data_array[:,edge[0]:, :]
+                if samples == 1:
+                    return data_array[0,edge[0]:,:], data_array[0,edge[0]:,:]
+                else:
+                    return data_array[:,edge[0]:, :], data_array[:,edge[0]:, :]
             else:
-                return data_array[:,edge[0]:-edge[1], :], data_array[:,edge[0]:-edge[1], :]
+                if samples == 1:
+                    return data_array[0,edge[0]:-edge[1],:], data_array[0,edge[0]:-edge[1],:]
+                else:
+                    return data_array[:,edge[0]:-edge[1], :], data_array[:,edge[0]:-edge[1], :]
 
 
 def grab_labels(row, index=0, set_based=0):

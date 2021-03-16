@@ -22,7 +22,7 @@ def main():
 
     # cuda = 1  # use cuda (1) or not (0)
     # torch.backends.cudnn.benchmark=True
-    print(f"Cuda available: {torch.cuda.is_available()}")
+    print(f"Cuda available: {torch.cuda.is_available()}; PyTorch version: {torch.__version__}")
     if torch.cuda.is_available():
         cuda = 1
     else:
@@ -174,6 +174,9 @@ def main():
                         help='Load loader from loaded model.')
     parser.add_argument('--relabel_validation', action='store_true',
                         help='Allow relabelling of validation set.')
+    parser.add_argument('--noise_patience', type=int, default=3, help='Increase the noise once the threshold was reached for this many epochs.')
+    parser.add_argument('--reverse_weight', type=float,
+                        default=1, help='Weight of the reverse prediction.')
 
     args = parser.parse_args()
 
@@ -219,7 +222,13 @@ def main():
                 elif old_type is str:
                     setattr(model_para, para_name, ' '.join(split_para[1:]))
                 elif old_type is bool:
-                    setattr(model_para, para_name, split_para[1:])
+                    if split_para[1].lower() == 'true':
+                        para_val = True
+                    elif split_para[1].lower() == 'false':
+                        para_val = False
+                    else:
+                        para_val = split_para[1]
+                    setattr(model_para, para_name, para_val)
                 else:
                     print(
                         f"Parameter type not implemented yet for {changed_parameter}")
@@ -249,6 +258,7 @@ def main():
 
     if args.load_loader and args.model:
         train_loader, valid_loader = data_loader.load_loader(args.model.split('.pt')[0])
+        df_for_test = None
     else:
         train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
             args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
@@ -257,8 +267,12 @@ def main():
             set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
     if args.path_test != '' or args.use_val_as_test:
+        if args.test_samples[0] == 1:
+            test_batch = args.batch
+        else:
+            test_batch = 1
         _, test_loader, _, _, _, _, _, _ = data_loader.create_loader(
-            None, args.path_test, 0, length, 1, args.edge, val_frac=1, test=True, test_samples=int(args.test_samples[0]), set_based=True, sim_prob=0,
+            None, args.path_test, 0, length, test_batch, args.edge, val_frac=1, test=True, test_samples=int(args.test_samples[0]), set_based=True, sim_prob=0,
             df_val_test=df_for_test)
         if args.add_test_to_train:
             df_test = test_loader.dataset.df
@@ -389,7 +403,8 @@ def main():
                                 loss_pool_mse=args.loss_pool_mse,
                                 relabel_set=args.relabel_set,
                                 relabel_thresholds=args.relabel_thresholds,
-                                relabel_validation=args.relabel_validation)
+                                relabel_validation=args.relabel_validation,
+                                reverse_weight=args.reverse_weight)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
@@ -444,7 +459,7 @@ def main():
         train_net.logger.save_best_values(
             epoch, loss_train, loss_valid, loss_test)
         train_net.update_noise(
-            epoch, args.name, decay=args.decay, freeze=freeze_val)
+            epoch, args.name, decay=args.decay, freeze=freeze_val, patience=args.noise_patience)
         if epoch % 1 == 0:
             if args.name:
                 # torch.save(train_net.net.state_dict(),
@@ -466,6 +481,11 @@ def main():
                 val_df = None
             train_net.logger.log_relabel(train_net.train_loader.dataset.noise_df, val_df,
                 args.name)
+        if args.path_test != '':
+        
+            train_net.test_loader.dataset.noise_df.to_csv(
+                f'./results/{args.name}_{args.path_test.split(".")[0]}.csv')
+
 
         if epoch % 1 == 0 and args.ffa_test != '':
             # ffa_count, non_detec, csv_ffa = ffa_test_whole_perf.main(
