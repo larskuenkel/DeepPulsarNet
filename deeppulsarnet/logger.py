@@ -143,7 +143,7 @@ class logger():
                         self.last_valid_mcc_real = mcc if not mcc == 'None' else 0
 
                     if mcc == 'None':
-                        mcc_string = 'nan  |'
+                        mcc_string = 'nan |'
                     else:
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string_split += ' ' + mcc_string + ''
