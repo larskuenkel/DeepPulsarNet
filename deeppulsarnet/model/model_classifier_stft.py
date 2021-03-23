@@ -86,13 +86,20 @@ class Height_conv(nn.Module):
             return output
 
 
-def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0, harmonic_downsample=False, no_adding=False):
+def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harmonics=0, harmonic_downsample=False, no_adding=False, pad_factor=0,
+                    bin_comparison=False):
+    x = x - x.mean(dim=2, keepdim=True)
+    switch = 0
+
+    if pad_factor!=0:
+        pad_val = int(x.shape[2] * pad_factor)
+        x = F.pad(x, (0, pad_val))
+
     if length == 0:
         length = x.shape[2]
     if hop_length == 0:
         hop_length = length
-    x = x - x.mean(dim=2, keepdim=True)
-    switch = 0
+
     for j in range(x.shape[1]):
         added_harmonics = 0
         stft_count = 0
@@ -176,6 +183,12 @@ class classifier_stft(nn.Module):
     def __init__(self, input_length, input_resolution, class_para, name='', dm0_class=False):
         super().__init__()
         self.input_length = input_length
+        if class_para.stft_count==1:
+            self.pad_factor = class_para.pad_factor
+        else:
+            self.pad_factor = 0
+        if self.pad_factor!=0:
+            self.input_length += int(self.input_length * self.pad_factor)
         #self.crop = int(crop_factor * (self.input_length // 2))
         self.final_output = 2
         self.crop_factor = class_para.crop_factor
@@ -294,7 +307,7 @@ class classifier_stft(nn.Module):
         for length in self.lengths:
             stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
                                 harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
-                                no_adding=self.train_harmonic)
+                                no_adding=self.train_harmonic, pad_factor=self.pad_factor)
             # if len(stft.shape)==4:
             #     stft = stft.unsqueeze(1)
             if self.train_harmonic:

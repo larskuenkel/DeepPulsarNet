@@ -12,5 +12,6 @@
 	"height_dropout" : 0.3,
 	"harmonic_downsample" : false,
 	"train_harmonic": false,
-	"combine_harm": false
+	"combine_harm": false,
+	"pad_factor": 1
 }
