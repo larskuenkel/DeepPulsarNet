@@ -91,9 +91,9 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harm
     x = x - x.mean(dim=2, keepdim=True)
     switch = 0
 
-    if pad_factor!=0:
-        pad_val = int(x.shape[2] * pad_factor)
-        x = F.pad(x, (0, pad_val))
+    # if pad_factor!=0:
+    #     pad_val = int(x.shape[2] * pad_factor)
+    #     x = F.pad(x, (0, pad_val))
 
     if length == 0:
         length = x.shape[2]
@@ -104,8 +104,15 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harm
         added_harmonics = 0
         stft_count = 0
         switch_harm = 0
-        stft = torch.stft(x[:, j, :], length, hop_length=hop_length, win_length=None,
-                          window=None, center=False, normalized=True, onesided=True,return_complex=False)
+        if pad_factor == 0:
+            stft = torch.stft(x[:, j, :], length, hop_length=hop_length, win_length=None,
+                              window=None, center=False, normalized=True, onesided=True,return_complex=False)
+        else:
+            nfft = int(length+pad_factor*length)
+            hop_length += 1
+            win_length = length
+            stft = torch.stft(x[:, j, :] , hop_length=hop_length, win_length=win_length,
+                              window=None, center=True, normalized=True, onesided=True,return_complex=False)            
 
         power_stft = stft[:, :crop, :, 0] ** 2 + \
             stft[:, :crop, :, 1] ** 2
