@@ -4,13 +4,16 @@ import numpy as np
 from data_loader import dataset
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+from contextlib import nullcontext
+from torch.cuda.amp import autocast, GradScaler
 
 
 class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
                  loss_weights_ini=(0.001, 1, 1, 1), loss_weights=(0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5], relabel_validation=False, reverse_weight=1):
+                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5], relabel_validation=False, reverse_weight=1,
+                 amp=False):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -53,6 +56,9 @@ class trainer():
         self.relabel_validation = relabel_validation
 
         self.reverse_weight = reverse_weight
+        self.amp = amp
+        if self.amp:
+            self.scaler = GradScaler()
 
 
     def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False, reverse_batch=False):
@@ -109,8 +115,9 @@ class trainer():
                 # ten_x.requires_grad = True
 
                 # self.net.ini_target = ten_y2
-                output_image, output_classifier, output_single_class, candidate_data = self.net(
-                    ten_x, target=ten_y2)  # net output
+                with (autocast() if self.amp else nullcontext()):
+                    output_image, output_classifier, output_single_class, candidate_data = self.net(
+                        ten_x, target=ten_y2)  # net output
 
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
@@ -182,11 +189,18 @@ class trainer():
                     if batch_loop==1:
                         loss *= self.reverse_weight
 
-                    loss.backward(retain_graph=True)
-                    if step % self.acc_grad == 0:
+                    if not self.amp:
+                        loss.backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
 
-                        self.net.optimizer.step()  # apply gradients
-                        self.net.optimizer.zero_grad()
+                            self.net.optimizer.step()  # apply gradients
+                            self.net.optimizer.zero_grad()
+                    else:
+                        self.scaler.scale(loss).backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
+                            self.scaler.step(self.net.optimizer)
+                            self.scaler.update()
+                            self.net.optimizer.zero_grad()
                 # stack results for scatter plot
                 cand_combined = torch.cat((candidate_data[0].detach().cpu(), candidate_data[1].detach().cpu()), dim=1).numpy()
                 self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),

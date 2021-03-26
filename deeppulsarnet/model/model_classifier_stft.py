@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
+from torch.cuda.amp import autocast
 
 
 class Flatten(nn.Module):
@@ -328,9 +329,10 @@ class classifier_stft(nn.Module):
         if not hasattr(self, 'bin_comparison'):
             self.bin_comparison = False
         for length in self.lengths:
-            stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
-                                harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
-                                no_adding=self.train_harmonic, pad_factor=self.pad_factor, bin_comparison=self.bin_comparison)
+            with autocast(enabled=False):
+                stft = compute_stft(x.float(), length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
+                                    harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
+                                    no_adding=self.train_harmonic, pad_factor=self.pad_factor, bin_comparison=self.bin_comparison)
             # if len(stft.shape)==4:
             #     stft = stft.unsqueeze(1)
             if self.train_harmonic:

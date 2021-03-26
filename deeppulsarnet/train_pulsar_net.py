@@ -177,6 +177,8 @@ def main():
     parser.add_argument('--noise_patience', type=int, default=3, help='Increase the noise once the threshold was reached for this many epochs.')
     parser.add_argument('--reverse_weight', type=float,
                         default=1, help='Weight of the reverse prediction.')
+    parser.add_argument('--amp', action='store_true',
+                        help='Use automatic mixed precision (based on autocast).')
 
     args = parser.parse_args()
 
@@ -404,7 +406,8 @@ def main():
                                 relabel_set=args.relabel_set,
                                 relabel_thresholds=args.relabel_thresholds,
                                 relabel_validation=args.relabel_validation,
-                                reverse_weight=args.reverse_weight)
+                                reverse_weight=args.reverse_weight,
+                                amp=args.amp)
 
     command_string = 'python ' + ' '.join(sys.argv[:])
 
