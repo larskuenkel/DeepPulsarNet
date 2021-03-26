@@ -111,11 +111,23 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harm
             nfft = int(length+pad_factor*length)
             hop_length += 1
             win_length = length
-            stft = torch.stft(x[:, j, :] , hop_length=hop_length, win_length=win_length,
-                              window=None, center=True, normalized=True, onesided=True,return_complex=False)            
 
-        power_stft = stft[:, :crop, :, 0] ** 2 + \
-            stft[:, :crop, :, 1] ** 2
+            stft = torch.stft(x[:, j, :],nfft , hop_length=hop_length, win_length=nfft,
+                              window=None, center=True, normalized=True, onesided=True,return_complex=False, pad_mode='constant')
+            # print(stft.shape)
+
+        if not bin_comparison:
+            power_stft = stft[:, :crop, :, 0] ** 2 + \
+                stft[:, :crop, :, 1] ** 2
+        else:
+            ini_power_stft = stft[:, :crop, :, 0] ** 2 + \
+                stft[:, :crop, :, 1] ** 2
+            bin_stft = stft + torch.roll(stft, 1, 1)
+            bin_power_stft = bin_stft[:, :crop, :, 0] ** 2 + \
+                bin_stft[:, :crop, :, 1] ** 2
+            stack_stft = torch.stack((ini_power_stft, bin_power_stft, torch.roll(bin_power_stft, 1, -1)), -1)
+
+            power_stft, _ = torch.max(stack_stft, -1)
 
         for harm_counter in range(2 ** harmonics):
             if harm_counter == 0:
@@ -190,12 +202,13 @@ class classifier_stft(nn.Module):
     def __init__(self, input_length, input_resolution, class_para, name='', dm0_class=False):
         super().__init__()
         self.input_length = input_length
-        if class_para.stft_count==1:
-            self.pad_factor = class_para.pad_factor
-        else:
-            self.pad_factor = 0
-        if self.pad_factor!=0:
-            self.input_length += int(self.input_length * self.pad_factor)
+        self.pad_factor = class_para.pad_factor
+        # if class_para.stft_count==1:
+        #     self.pad_factor = class_para.pad_factor
+        # else:
+        #     self.pad_factor = 0
+        # if self.pad_factor!=0:
+        #     self.input_length += int(self.input_length * self.pad_factor)
         #self.crop = int(crop_factor * (self.input_length // 2))
         self.final_output = 2
         self.crop_factor = class_para.crop_factor
@@ -211,7 +224,8 @@ class classifier_stft(nn.Module):
         self.use_center = False
 
         self.stft_count = class_para.stft_count
-        print(input_length)
+        self.bin_comparison = class_para.bin_comparison
+        # print(input_length)
 
         max_height = 2 ** (self.stft_count - 1)
         self.lengths = []
@@ -301,7 +315,7 @@ class classifier_stft(nn.Module):
         if pretrain_conv:
             self.pretrain_conv()
 
-        self.fft_res = 1 / (self.input_resolution * self.min_length)
+        self.fft_res = 1 / (self.input_resolution * int(self.min_length*(1+self.pad_factor)))
 
     def forward(self, x):
 
@@ -311,10 +325,12 @@ class classifier_stft(nn.Module):
         k = 0
         if not hasattr(self, 'train_harmonic'):
             self.train_harmonic = False
+        if not hasattr(self, 'bin_comparison'):
+            self.bin_comparison = False
         for length in self.lengths:
             stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
                                 harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
-                                no_adding=self.train_harmonic, pad_factor=self.pad_factor)
+                                no_adding=self.train_harmonic, pad_factor=self.pad_factor, bin_comparison=self.bin_comparison)
             # if len(stft.shape)==4:
             #     stft = stft.unsqueeze(1)
             if self.train_harmonic:
@@ -419,7 +435,8 @@ class classifier_stft(nn.Module):
 
         final_para = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
         self.final[0].weight = final_para
-        self.final_cands[0].weight = final_para
+        final_para_cands = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
+        self.final_cands[0].weight = final_para_cands
         # self.final[0].weight[0,:] = - weight
         # self.final[0].weight[1,:] = + weight
 

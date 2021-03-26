@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "stft",
+	"name" : "stft_unpad",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
@@ -13,5 +13,6 @@
 	"harmonic_downsample" : false,
 	"train_harmonic": false,
 	"combine_harm": false,
-	"pad_factor": 0
+	"pad_factor": 0,
+	"bin_comparison": false
 }

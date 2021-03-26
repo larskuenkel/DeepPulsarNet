@@ -13,5 +13,6 @@
 	"harmonic_downsample" : false,
 	"train_harmonic": false,
 	"combine_harm": false,
-	"pad_factor": 1
+	"pad_factor": 1,
+	"bin_comparison": false
 }

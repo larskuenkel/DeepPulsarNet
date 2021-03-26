@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "stft",
+	"name" : "stft_bin",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
@@ -14,5 +14,5 @@
 	"train_harmonic": false,
 	"combine_harm": false,
 	"pad_factor": 1,
-	"bin_comparison": false
+	"bin_comparison": true
 }

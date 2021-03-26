@@ -145,6 +145,7 @@ class pulsar_net(nn.Module):
                         pass
 
             self.classifiers = []
+            self.classifier_names = []
             added = ''
         else:
             added = '_1'
@@ -181,7 +182,7 @@ class pulsar_net(nn.Module):
                                                          remove_threshold=class_para.remove_dynamic_threshold,
                                                          name=f"classifier_ffa{added}"))
                 self.classifiers.append(
-                    getattr(self, "classifier_ffa%s" % added))
+                    getattr(self, class_name))
 
             # if 'stft_comb' in self.class_mode:
             if class_para.class_type == 'stft':
@@ -192,7 +193,8 @@ class pulsar_net(nn.Module):
                                                           dm0_class=dm0_class,
                                                           name=class_name))
                 self.classifiers.append(
-                    getattr(self, f"classifier_{class_para.name}"))
+                    getattr(self, class_name))
+            self.classifier_names.append(class_name)
         # else:
         #     self.classifier = None
 
