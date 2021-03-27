@@ -118,6 +118,8 @@ class trainer():
                 with (autocast() if self.amp else nullcontext()):
                     output_image, output_classifier, output_single_class, candidate_data = self.net(
                         ten_x, target=ten_y2)  # net output
+                    loss, periods = self.calc_loss(output_image, ten_y,
+                                               output_classifier, ten_y2, only_class, single_class=output_single_class)
 
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
@@ -137,12 +139,15 @@ class trainer():
                         self.crop, ten_y, output_image)
 
 
-                loss, periods = self.calc_loss(output_image, ten_y,
-                                               output_classifier, ten_y2, only_class, single_class=output_single_class)
+                # loss, periods = self.calc_loss(output_image, ten_y,
+                #                                output_classifier, ten_y2, only_class, single_class=output_single_class)
 
-                if candidate_data[0].shape[0]>1:
-                    cand_loss = self.calc_cand_loss(candidate_data)
-                    loss = loss + cand_loss
+                try:
+                    if candidate_data[0].shape[0]>1:
+                        cand_loss = self.calc_cand_loss(candidate_data)
+                        loss = loss + cand_loss
+                except:
+                    pass
 
                 loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
@@ -552,8 +557,6 @@ class trainer():
             #     loss_acf = self.net.loss_autoenc(
             #         output_acf, target_acf)
             #     loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
-
-
         else:
             loss_whole = None
 
@@ -615,9 +618,9 @@ class trainer():
             #         loss_whole /= (clas_factor + autoenc_factor)
             # else:
             #     loss_whole /= (clas_factor)
-        else:
-            if not loss_whole == None:
-                loss_whole = None
+        # else:
+        #     if not loss_whole == None:
+        #         loss_whole = None
         return loss_whole, periods
 
     def calc_cand_loss(self, cand_data):

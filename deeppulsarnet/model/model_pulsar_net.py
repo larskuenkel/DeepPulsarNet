@@ -279,7 +279,7 @@ class pulsar_net(nn.Module):
         j = 0
         encoded = self.output_layer(encoded)
         if self.mode == 'dedisperse':
-            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
+            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True), (torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True))
 
         if hasattr(self, 'break_grad'):
             if self.break_grad:

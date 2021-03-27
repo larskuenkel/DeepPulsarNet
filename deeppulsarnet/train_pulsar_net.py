@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 # Finding pulsars in filterbank data
-
 import torch
 import numpy as np
 import argparse
