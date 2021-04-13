@@ -1,4 +1,4 @@
-from model import model_smooth
+#from model import model_smooth
 import torch
 import numpy as np
 from data_loader import dataset
@@ -21,7 +21,6 @@ class trainer():
         self.net = net
         self.device = device
         self.bandpass = 0
-        self.smooth = model_smooth.smooth().to(device)
         self.noise = noise
         self.threshold = threshold
         self.last_noise_update = -1
@@ -115,6 +114,7 @@ class trainer():
                 # ten_x.requires_grad = True
 
                 # self.net.ini_target = ten_y2
+                # torch.save(ten_y, f'./test/{step}_{batch_loop}.pt')
                 with (autocast() if self.amp else nullcontext()):
                     output_image, output_classifier, output_single_class, candidate_data = self.net(
                         ten_x, target=ten_y2)  # net output
@@ -443,7 +443,7 @@ class trainer():
         data_tensor = torch.tensor(
             data, dtype=torch.float).unsqueeze(0).to(self.device)
         # data_tensor = self.noise_and_norm(data_tensor, 2)
-        target = self.smooth(torch.tensor(
+        target = self.net.gauss_smooth(torch.tensor(
             target_array, dtype=torch.float).unsqueeze(0).to(self.device))
         # plt.imshow(target[0,:,:], aspect='auto')
         # plt.show()

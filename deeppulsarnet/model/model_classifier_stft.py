@@ -226,6 +226,11 @@ class classifier_stft(nn.Module):
 
         self.stft_count = class_para.stft_count
         self.bin_comparison = class_para.bin_comparison
+
+        if hasattr(class_para, 'norm_significance'):
+            self.norm_significance = class_para.norm_significance
+        else:
+            norm_significance = False
         # print(input_length)
 
         max_height = 2 ** (self.stft_count - 1)
@@ -372,6 +377,13 @@ class classifier_stft(nn.Module):
         #    out_conv_combined = out_conv_combined[:,:,:,:,:-1] - out_conv_combined[:,:,:,:,-1][:,:,:,:,None]
 
         #out_conv = self.conv(stft.unsqueeze(1))
+
+        # Normalise the output based on the standard deviation and median
+        if not hasattr(self, 'norm_significance'):
+            self.norm_significance = False
+
+        if self.norm_significance:
+            out_conv = (out_conv - out_conv.median(dim=2, keepdim=True)[0]) /  out_conv.std(dim=2, keepdim=True)
 
         reduce_edges = 1
         if reduce_edges:

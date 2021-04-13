@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 
 class candidate_creator(nn.Module):
-    def __init__(self, added_cands=0, psr_cands=False, candidate_threshold=0):
+    def __init__(self, added_cands=0, psr_cands=0, candidate_threshold=0):
         super().__init__()
         self.added_cands = added_cands
         self.psr_cands = psr_cands
@@ -25,7 +25,7 @@ class candidate_creator(nn.Module):
                 out_conv, periods, final_layer, channel_correction, target=target, num_cands=self.added_cands, threshold=self.candidate_threshold)
         # else:
         #     cands_target = torch.empty(0, requires_grad=True)
-        if target is not None and self.psr_cands:
+        if target is not None and self.psr_cands>0:
             psr_in_batch = (target[:, 2].long() % 2) != 0
             if True in psr_in_batch:
                 do_psr_cands = True
@@ -36,7 +36,7 @@ class candidate_creator(nn.Module):
 
         if do_psr_cands:
             psr_candidates, psr_cand_target = self.create_cands_psr(
-                out_conv, periods, final_layer, target=target)
+                out_conv, periods, final_layer, target=target, number=self.psr_cands)
             if self.added_cands > 0:
                 candidates = torch.cat((candidates, psr_candidates), dim=0)
                 cand_target = torch.cat((cand_target, psr_cand_target), dim=0)
@@ -127,15 +127,17 @@ class candidate_creator(nn.Module):
                 is_harmonic = check_harmonic_bins(
                     out_period.cpu().numpy(), target_periods.cpu().numpy(), periods.cpu().numpy())
                 if is_harmonic:
+                    # Label 1 denotes that the signal should be the pulsar
                     target_repeated[i, 2] = 1
                 else:
+                    # Label 0 denotes no pulsar
                     target_repeated[i, 2] = 0
 
         output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
 
         return output, target_repeated
 
-    def create_cands_psr(self, x, periods, final_layer, target, pool_range=3):
+    def create_cands_psr(self, x, periods, final_layer, target, pool_range=3, number=1):
 
         # print(target)
 
@@ -143,18 +145,32 @@ class candidate_creator(nn.Module):
         psr_conv = x[batch_mask, :, :, :]
         #psr_target = target[target[:,0]==target[:,0],:]
         psr_target = target[batch_mask, :]
+
+        psr_count = psr_conv.shape[0]
+
+        psr_conv_stacked = psr_conv
+        psr_target_stacked = psr_target
+
+        for harmonic_count in range(number-1):
+            psr_conv_stacked = torch.cat((psr_conv_stacked, psr_conv), 0)
+            psr_target_stacked = torch.cat((psr_target_stacked, psr_target), 0)
+            psr_target[-psr_count:,0] = psr_target[-psr_count:,0] / (harmonic_count+1)
+
+
         # print(psr_conv.shape, psr_target.shape)
-        periods_expanded = periods.unsqueeze(0).expand(psr_target.shape[0], -1)
+        periods_expanded = periods.unsqueeze(0).expand(psr_target_stacked.shape[0], -1)
         period_positions = torch.argmin(
-            (periods_expanded - psr_target[:, :1]).abs(), dim=1)
+            (periods_expanded - psr_target_stacked[:, :1]).abs(), dim=1)
         #ini_mask = torch.ones_like(x)
+
         ini_mask = torch.arange(x.shape[2]).reshape(1, 1, x.shape[2], 1).expand(
-            psr_conv.shape[0], x.shape[1], -1, x.shape[3]).to(x.device).float()
+            psr_conv_stacked.shape[0], x.shape[1], -1, x.shape[3]).to(x.device).float()
+
 
         mask = (ini_mask - period_positions[:,
                                             None, None, None]).abs() > pool_range
-        psr_conv[mask] = -100
-        out_pool, max_pos = self.glob_pool(psr_conv[:, :, :, :])
+        psr_conv_stacked[mask] = -100
+        out_pool, max_pos = self.glob_pool(psr_conv_stacked[:, :, :, :])
         max_pos = max_pos[:, 0, 0, 0] // x.shape[3] % x.shape[2]
         max_pos_per = max_pos.long()
         cands_periods = periods[max_pos_per]
@@ -164,11 +180,12 @@ class candidate_creator(nn.Module):
 
         output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
 
-        psr_target = torch.cat((psr_target, psr_target[:, 2:3]), 1)
+        psr_target_stacked = torch.cat((psr_target_stacked, psr_target_stacked[:, 2:3]), 1)
 
-        psr_target[:, 2] = 3
+        # Label 3 denotes psr_cands target
+        psr_target_stacked[:, 2] = 3
 
-        return output, psr_target
+        return output, psr_target_stacked
 
 
 def check_harmonic(period_1, period_2, harmonics=16, fraction_error=0.02):

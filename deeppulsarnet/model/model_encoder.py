@@ -91,7 +91,7 @@ class pulsar_encoder(nn.Module):
                 #     added_chan=0
 
                 layers += [TemporalBlock(out_channels, out_channels, model_para.tcn_1_kernel, stride=1, dilation=dil,
-                                         groups=model_para.tcn_1_groups, residual=True, dropout=model_para.tcn_1_dropout)]
+                                         norm_groups=model_para.tcn_1_norm_groups, conv_groups=model_para.tcn_1_conv_groups, residual=True, dropout=model_para.tcn_1_dropout)]
             if out_channels != model_para.tcn_2_channels:
                 layers += [weight_norm(nn.Conv1d(out_channels, model_para.tcn_2_channels, 1)),
                            nn.LeakyReLU(),
@@ -104,7 +104,7 @@ class pulsar_encoder(nn.Module):
                     conv_groups = 1
                 layers += [weight_norm(nn.Conv1d(out_channels, model_para.tcn_2_channels, 1, groups=conv_groups)),
                            nn.LeakyReLU(),
-                           nn.GroupNorm(model_para.tcn_2_groups, model_para.tcn_2_channels, affine=True)]
+                           nn.GroupNorm(model_para.tcn_2_norm_groups, model_para.tcn_2_channels, affine=True)]
 
         # if num_inputs != self.ini_channels:
         #     self.first_conv.add_module('downsample', nn.Conv1d(

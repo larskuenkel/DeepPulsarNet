@@ -88,7 +88,10 @@ class pulsar_net(nn.Module):
         if model_para.tcn_2_layers:
             self.use_tcn = 1
             self.tcn = TemporalConvNet_multi(model_para.tcn_2_channels, model_para.tcn_2_channels_increase,
-                                             model_para.tcn_2_layers, model_para.tcn_2_groups, dilation=model_para.tcn_2_dilation,
+                                             model_para.tcn_2_layers, norm_groups=model_para.tcn_2_norm_groups, 
+                                             conv_groups=model_para.tcn_2_conv_groups,
+                                             kernel_size=model_para.tcn_2_kernel,
+                                             dilation=model_para.tcn_2_dilation,
                                              levels=model_para.tcn_2_downsample_levels,
                                              downsample_factor=model_para.tcn_2_downsample_factor)
             dec_input = self.tcn.output_chan
@@ -435,9 +438,17 @@ class pulsar_net(nn.Module):
         #print(smoothed.shape, tensor.shape)
         # out_tensor = torch.cat((
         #     smoothed, tensor[:, 1:, :]), dim=1)
-        # plt.plot(tensor[0,0,:].detach().cpu().numpy())
-        # plt.plot(smoothed[0,0,:].detach().cpu().numpy())
-        # plt.show()
+        # import matplotlib
+        # print(tensor.shape, smoothed.shape)
+        # matplotlib.use('Agg')
+        # plt.plot(tensor[0,0,:200].detach().cpu().numpy())
+        # plt.plot(smoothed[0,0,0,:200].detach().cpu().numpy()+0.1)
+        # plt.plot(tensor[0,1,:200].detach().cpu().numpy()+0.2)
+        # plt.plot(smoothed[0,0,1,:200].detach().cpu().numpy()+0.3)
+        # import time
+        # plt.savefig(f"./test/{time.time()}.png")
+        # plt.close()
+        #plt.show()
         return smoothed[:, 0, :, :]
 
     def set_preprocess(self, input_shape, norm, bias=65, clamp=[-10, 10], dm0_subtract=False,

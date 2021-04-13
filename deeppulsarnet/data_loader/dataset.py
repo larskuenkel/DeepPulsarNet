@@ -138,13 +138,13 @@ class FilDataset(data_utils.Dataset):
         else:
             labels = np.append(labels, dm_indexes[0])
 
-        noisy_data, orig_data = load_filterbank(
+        noisy_data, target_data = load_filterbank(
             sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
                 1], down_factor=self.down_factor,
             dm=labels[1], test_samples=self.test_samples, name=name, nulling=self.nulling,
             dmsplit=self.dmsplit, dm_indexes=dm_indexes, net_out=self.net_out)
-        # print(noisy_data.shape, orig_data.shape)
-        return noisy_data, orig_data, labels
+        # print(noisy_data.shape, target_data.shape)
+        return noisy_data, target_data, labels
 
     def __len__(self):
         if not self.set_based:
@@ -228,11 +228,9 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             if labels[2] == 3 or labels[2] == 5:
                 target_array.fill(np.nan)
 
-        # print(data_array.shape)
         if not edge[1] and not edge[0]:
             return data_array, target_array
         else:
-            # print(data_array, orig_array, edge)
             if not edge[1]:
                 return data_array[edge[0]:, :], target_array
             else:

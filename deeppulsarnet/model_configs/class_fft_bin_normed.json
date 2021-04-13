@@ -1,0 +1,19 @@
+{
+	"class_type" : "stft",
+	"name" : "fft_bin",
+	"crop_factor" : 0.5,
+	"channels" : 8,
+	"pooling" : 0,
+	"kernel" : 11,
+	"stft_count" : 1,
+	"harmonics" : 4,
+	"norm" : false,
+	"nn_layers" : 1,
+	"height_dropout" : 0,
+	"harmonic_downsample" : false,
+	"train_harmonic": false,
+	"combine_harm": false,
+	"pad_factor": 1,
+	"bin_comparison": true,
+	"norm_significance":true
+}
