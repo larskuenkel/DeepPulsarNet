@@ -124,8 +124,8 @@ def main():
                         default=[1, 0], help='Calculate tcn in chunks to save memory. [Chunks, overlap]')
     parser.add_argument('--kfold', type=int, default=-1,
                         help='Choose which 5-fold to use. -1 means random validation/train set.')
-    parser.add_argument('--dmsplit', action='store_true',
-                        help='Split dm in output channels.')
+    parser.add_argument('--dmsplit', action='store_false',
+                        help='Do not split dm in output channels. First channel is used to train reconstruction, others are free.')
     parser.add_argument('--progress', action='store_false',
                         help='Do not print progress. (Nicer output with slurm).')
     parser.add_argument('--dmoverlap', type=float,
@@ -161,8 +161,8 @@ def main():
                         default=[1, 1], help='Weight of the classes.')
     parser.add_argument('--added_cands', type=int,
                         default=0, help='Number of additional candidates per file per classifier.')
-    parser.add_argument('--psr_cands', action='store_true',
-                        help='Also use a candidate at the position of the pulsar period during training.')
+    parser.add_argument('--psr_cands', type=int, default=0,
+                        help='Also use candidates at the harmonics up to this many harmonics.')
     parser.add_argument('--cands_threshold', type=float,
                         default=0, help='Threshold under which candidates are filtered.')
     parser.add_argument('--stop_after_noise_update', action='store_true',
