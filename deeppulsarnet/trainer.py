@@ -99,8 +99,10 @@ class trainer():
                     ten_x = ten_x.flip(2)
                     ten_y = torch.zeros_like(ten_y)
                     #ten_y2 = torch.zeros_like(ten_y2)
-                    null_indices = [0,1,2]
+                    null_indices = [2]
                     ten_y2[:,null_indices] = 0
+                    nan_indices = [0,1]
+                    ten_y2[:,nan_indices] = np.nan
 
                 # ten_x = x.to(self.device).float()
 
@@ -120,6 +122,13 @@ class trainer():
                         ten_x, target=ten_y2)  # net output
                     loss, periods = self.calc_loss(output_image, ten_y,
                                                output_classifier, ten_y2, only_class, single_class=output_single_class)
+                    try:
+                        if candidate_data[0].shape[0]>1:
+                            cand_loss = self.calc_cand_loss(candidate_data)
+                            loss = loss + cand_loss
+                    except:
+                        print('Error with candidate loss calculation')
+                        pass
 
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
@@ -141,13 +150,6 @@ class trainer():
 
                 # loss, periods = self.calc_loss(output_image, ten_y,
                 #                                output_classifier, ten_y2, only_class, single_class=output_single_class)
-
-                try:
-                    if candidate_data[0].shape[0]>1:
-                        cand_loss = self.calc_cand_loss(candidate_data)
-                        loss = loss + cand_loss
-                except:
-                    pass
 
                 loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
@@ -535,28 +537,6 @@ class trainer():
             else:
                 loss_whole = None
 
-            # if self.fft_loss or self.acf_loss:
-            #     loss_whole_im = loss_whole_im * \
-            #         np.max((0, 1 - self.fft_loss - self.acf_loss))
-            # if self.fft_loss:
-            #     # print(self.fft_loss)
-            #     output_fft = self.net.classifier_fft.compute_fft(
-            #         output_im_smooth, harmonics=0)[:, 0, :]
-            #     target_fft = self.net.classifier_fft.compute_fft(
-            #         target_im, harmonics=0)[:, 0, :]
-            #     loss_fft = self.net.loss_autoenc(
-            #         output_fft, target_fft)
-            #     loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
-
-            # if self.acf_loss:
-            #     acf_padding = 500
-            #     output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
-            #         0, :, :] * self.acf_scale
-            #     target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
-            #         0, :, :] * self.acf_scale
-            #     loss_acf = self.net.loss_autoenc(
-            #         output_acf, target_acf)
-            #     loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
         else:
             loss_whole = None
 
@@ -589,7 +569,6 @@ class trainer():
                 ten_y_1 = target_clas[:, 0][~torch.isnan(
                     target_clas[:, 0])].view(-1, 1)
                 if len(output_clas_1) != 0:
-                    # print(output_clas_1, ten_y_1)
                     loss_1 = self.net.loss_1(output_clas_1, ten_y_1)
                     weight_1 = len(output_clas_1)
                     loss_val_1 = loss_1.data.cpu().numpy()
@@ -626,6 +605,7 @@ class trainer():
     def calc_cand_loss(self, cand_data):
 
         weight_factor = self.used_loss_weights[3] * self.used_loss_weights[0]
+        cand_data = self.label_channel_targets(cand_data)
         output = cand_data[0][:,:2]
         target = torch.fmod(cand_data[1][:,2],2).long()
 
@@ -633,17 +613,37 @@ class trainer():
 
         return cand_loss
 
-    def estimate_period(self, tensor):
-        conv_factor = 0.00064 * 4
-        # tensor_reshaped = tensor.permute(1, 0, 2)
-        # tensor_acf = F.conv1d(tensor_reshaped, tensor,
-        #                       padding=2500, groups=tensor.shape[0])
-        tensor_acf = self.calc_acf(tensor)
-        middle = int(tensor_acf.shape[2] / 2)
-        part_acf = tensor_acf[:, :, middle + 100:]
-        max_vals = torch.argmax(part_acf, dim=2).float()
-        periods = (max_vals + 100) * conv_factor  # / self.net.mean_vals[0]
-        return periods.permute(1, 0).float()
+    def label_channel_targets(self, cand_data):
+        output = cand_data[0]
+        target = cand_data[1]
+        dm_ranges = target[:,7:9]
+        # print(target[:,2])
+        # not sure how to easily without iterating
+        # iterate through candidates and set label for channel candidates based on target DM
+        for i in range(output.shape[0]):
+            # do not relabel global candidates
+            channel_info = output[i, 3]
+            if channel_info != -1:
+                if not (channel_info >= dm_ranges[i,0] and channel_info <=dm_ranges[i,1]):
+                    target[i, 2] = 0
+        # print(target[:,2])
+        # print(target[:,7:9])
+        # print(output[:,3:])
+        # print('----')
+
+        return (output, target)
+
+    # def estimate_period(self, tensor):
+    #     conv_factor = 0.00064 * 4
+    #     # tensor_reshaped = tensor.permute(1, 0, 2)
+    #     # tensor_acf = F.conv1d(tensor_reshaped, tensor,
+    #     #                       padding=2500, groups=tensor.shape[0])
+    #     tensor_acf = self.calc_acf(tensor)
+    #     middle = int(tensor_acf.shape[2] / 2)
+    #     part_acf = tensor_acf[:, :, middle + 100:]
+    #     max_vals = torch.argmax(part_acf, dim=2).float()
+    #     periods = (max_vals + 100) * conv_factor  # / self.net.mean_vals[0]
+    #     return periods.permute(1, 0).float()
 
     def crop_target_output(self, crop, target, output):
         return target[:, :, crop:-crop], output  # [:, :, crop:-crop]

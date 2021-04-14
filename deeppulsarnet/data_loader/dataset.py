@@ -133,10 +133,11 @@ class FilDataset(data_utils.Dataset):
             dm_indexes = [0]
             self.net_out = 1
 
+
         if len(dm_indexes)<1:
-            labels = np.append(labels, -1)
+            labels = np.concatenate((labels, -1, -1), axis=None)
         else:
-            labels = np.append(labels, dm_indexes[0])
+            labels = np.concatenate((labels, dm_indexes[0], dm_indexes[-1]), axis=None)
 
         noisy_data, target_data = load_filterbank(
             sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[

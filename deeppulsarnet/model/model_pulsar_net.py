@@ -32,7 +32,7 @@ class pulsar_net(nn.Module):
                  gauss=(27, 15 / 4, 1, 1),
                  cmask=False, rfimask=False,
                  dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
-                 edge=[0, 0], class_weight=[1, 1], added_cands=0, psr_cands=False,
+                 edge=[0, 0], class_weight=[1, 1], added_cands=0, psr_cands=False, added_channel_cands=0,
                  cands_threshold=0):
         super().__init__()
 
@@ -64,12 +64,14 @@ class pulsar_net(nn.Module):
         self.output_resolution = data_resolution * self.down_fac
 
         self.added_cands = added_cands
+        self.added_channel_cands = added_channel_cands
         self.psr_cands = psr_cands
         self.cands_threshold = 0
 
-        self.candidate_creator = candidate_creator(added_cands=self.added_cands, psr_cands=self.psr_cands,
-                                                       candidate_threshold=self.cands_threshold)
-        if self.added_cands or self.psr_cands:
+        self.candidate_creator = candidate_creator(added_cands=self.added_cands, added_channel_cands=self.added_channel_cands,
+                                                   psr_cands=self.psr_cands,
+                                                   candidate_threshold=self.cands_threshold, output_chan=self.output_chan)
+        if self.added_cands or self.psr_cands or self.added_channel_cands:
             self.cand_based = True
         else:
             self.cand_based = False
@@ -88,7 +90,7 @@ class pulsar_net(nn.Module):
         if model_para.tcn_2_layers:
             self.use_tcn = 1
             self.tcn = TemporalConvNet_multi(model_para.tcn_2_channels, model_para.tcn_2_channels_increase,
-                                             model_para.tcn_2_layers, norm_groups=model_para.tcn_2_norm_groups, 
+                                             model_para.tcn_2_layers, norm_groups=model_para.tcn_2_norm_groups,
                                              conv_groups=model_para.tcn_2_conv_groups,
                                              kernel_size=model_para.tcn_2_kernel,
                                              dilation=model_para.tcn_2_dilation,
@@ -448,7 +450,7 @@ class pulsar_net(nn.Module):
         # import time
         # plt.savefig(f"./test/{time.time()}.png")
         # plt.close()
-        #plt.show()
+        # plt.show()
         return smoothed[:, 0, :, :]
 
     def set_preprocess(self, input_shape, norm, bias=65, clamp=[-10, 10], dm0_subtract=False,

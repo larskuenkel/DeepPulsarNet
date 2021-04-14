@@ -160,7 +160,9 @@ def main():
     parser.add_argument('--class_weight', type=float, nargs=2,
                         default=[1, 1], help='Weight of the classes.')
     parser.add_argument('--added_cands', type=int,
-                        default=0, help='Number of additional candidates per file per classifier.')
+                        default=0, help='Number of additional global candidates per file per classifier.')
+    parser.add_argument('--added_channel_cands', type=int,
+                        default=0, help='Number of additional channel candidates per file per classifier.')
     parser.add_argument('--psr_cands', type=int, default=0,
                         help='Also use candidates at the harmonics up to this many harmonics.')
     parser.add_argument('--cands_threshold', type=float,
@@ -363,6 +365,7 @@ def main():
                          class_configs=args.class_configs, data_resolution=data_resolution,
                          crop=args.crop, edge=args.edge, class_weight=args.class_weight,
                          added_cands=args.added_cands, psr_cands=args.psr_cands,
+                         added_channel_cands=args.added_channel_cands,
                          cands_threshold=args.cands_threshold).to(device)
         net.edge = train_loader.dataset.edge
         net.device = device

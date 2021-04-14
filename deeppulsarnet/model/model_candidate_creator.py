@@ -6,11 +6,13 @@ import matplotlib.pyplot as plt
 
 
 class candidate_creator(nn.Module):
-    def __init__(self, added_cands=0, psr_cands=0, candidate_threshold=0):
+    def __init__(self, added_cands=0, added_channel_cands=0, psr_cands=0, candidate_threshold=0, output_chan=1):
         super().__init__()
         self.added_cands = added_cands
+        self.added_channel_cands = added_channel_cands
         self.psr_cands = psr_cands
         self.candidate_threshold = candidate_threshold
+        self.output_chan = output_chan
 
         self.glob_pool = nn.AdaptiveMaxPool2d((1, 1), return_indices=True)
 
@@ -21,11 +23,23 @@ class candidate_creator(nn.Module):
         periods = class_data[1]
 
         if self.added_cands > 0:
-            candidates, cand_target = self.create_cands_global(
+            candidates, cand_target = self.create_cands(
                 out_conv, periods, final_layer, channel_correction, target=target, num_cands=self.added_cands, threshold=self.candidate_threshold)
+        if self.added_channel_cands > 0:
+            candidates_channel, cand_target_channel = self.create_cands(
+                out_conv, periods, final_layer, channel_correction, target=target, num_cands=self.added_channel_cands, threshold=self.candidate_threshold,
+                per_channel=True, output_chan=self.output_chan)
+            if self.added_cands > 0:
+                candidates = torch.cat((candidates, candidates_channel), dim=0)
+                cand_target = torch.cat(
+                    (cand_target, cand_target_channel), dim=0)
+            else:
+                candidates = candidates_channel
+                cand_target = cand_target_channel
+
         # else:
         #     cands_target = torch.empty(0, requires_grad=True)
-        if target is not None and self.psr_cands>0:
+        if target is not None and self.psr_cands > 0:
             psr_in_batch = (target[:, 2].long() % 2) != 0
             if True in psr_in_batch:
                 do_psr_cands = True
@@ -37,24 +51,25 @@ class candidate_creator(nn.Module):
         if do_psr_cands:
             psr_candidates, psr_cand_target = self.create_cands_psr(
                 out_conv, periods, final_layer, target=target, number=self.psr_cands)
-            if self.added_cands > 0:
+            if self.added_cands > 0 or self.added_channel_cands > 0:
                 candidates = torch.cat((candidates, psr_candidates), dim=0)
                 cand_target = torch.cat((cand_target, psr_cand_target), dim=0)
             else:
                 candidates = psr_candidates
                 cand_target = psr_cand_target
 
-        if self.added_cands == 0 and not do_psr_cands:
+        if self.added_cands == 0 and self.added_channel_cands == 0 and not do_psr_cands:
             candidates = torch.empty(0, requires_grad=True)
             cand_target = torch.empty(0, requires_grad=True)
 
         return candidates, cand_target
 
-    def create_cands_global(self, x, periods, final_layer, channel_correction, target=None, num_cands=2, masked_area=20, threshold=0):
+    def create_cands(self, x, periods, final_layer, channel_correction, target=None, num_cands=2, masked_area=20, threshold=0,
+                     per_channel=False, output_chan=1):
         x = x.permute(0, 1, 2, 3)
         x_repeated = x.repeat(num_cands, 1, 1, 1)
         if target is not None:
-            target_repeated = target.repeat(num_cands, 1)
+            target_repeated = target.repeat(num_cands, 1).repeat(output_chan, 1)
         else:
             target_repeated = torch.empty(0, requires_grad=True)
 
@@ -89,7 +104,19 @@ class candidate_creator(nn.Module):
         # plt.imshow(x_repeated.cpu().detach().numpy()[:,0,:,1], aspect='auto', interpolation='nearest', vmin=-5)
         # plt.colorbar()
         # plt.show()
-        out_pool, max_pos = self.glob_pool(x_repeated[:, :, :, :])
+        if per_channel:
+            pool_output = (1, output_chan)
+            channel_info = torch.arange(output_chan).repeat_interleave(num_cands*x.shape[0]).to(x.device)
+        else:
+            pool_output = (1, 1)
+            channel_info = torch.Tensor([-1,]*x_repeated.shape[0]).to(x.device)
+
+        # out_pool, max_pos = self.glob_pool(x_repeated[:, :, :, :])
+
+        out_pool, max_pos = F.adaptive_max_pool2d(x_repeated[:, :, :, :],
+                                                  output_size=pool_output, return_indices=True)
+        out_pool = out_pool.reshape(out_pool.shape[0]*out_pool.shape[3], 1, 1, 1)
+        max_pos = max_pos.reshape(max_pos.shape[0]*max_pos.shape[3], 1, 1, 1)
         max_pos = max_pos[:, 0, 0, 0] // x.shape[3] % x.shape[2]
         max_pos_per = max_pos.long()
         cands_periods = periods[max_pos_per]
@@ -133,7 +160,7 @@ class candidate_creator(nn.Module):
                     # Label 0 denotes no pulsar
                     target_repeated[i, 2] = 0
 
-        output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
+        output = torch.cat((output, cands_periods.unsqueeze(1), channel_info.unsqueeze(1)), 1)
 
         return output, target_repeated
 
@@ -151,21 +178,21 @@ class candidate_creator(nn.Module):
         psr_conv_stacked = psr_conv
         psr_target_stacked = psr_target
 
-        for harmonic_count in range(number-1):
+        for harmonic_count in range(number - 1):
             psr_conv_stacked = torch.cat((psr_conv_stacked, psr_conv), 0)
             psr_target_stacked = torch.cat((psr_target_stacked, psr_target), 0)
-            psr_target[-psr_count:,0] = psr_target[-psr_count:,0] / (harmonic_count+1)
-
+            psr_target[-psr_count:, 0] = psr_target[-psr_count:,
+                                                    0] / (harmonic_count + 1)
 
         # print(psr_conv.shape, psr_target.shape)
-        periods_expanded = periods.unsqueeze(0).expand(psr_target_stacked.shape[0], -1)
+        periods_expanded = periods.unsqueeze(
+            0).expand(psr_target_stacked.shape[0], -1)
         period_positions = torch.argmin(
             (periods_expanded - psr_target_stacked[:, :1]).abs(), dim=1)
         #ini_mask = torch.ones_like(x)
 
         ini_mask = torch.arange(x.shape[2]).reshape(1, 1, x.shape[2], 1).expand(
             psr_conv_stacked.shape[0], x.shape[1], -1, x.shape[3]).to(x.device).float()
-
 
         mask = (ini_mask - period_positions[:,
                                             None, None, None]).abs() > pool_range
@@ -178,9 +205,12 @@ class candidate_creator(nn.Module):
         out_pool_reshape = out_pool[:, :, 0, 0]
         output = final_layer(out_pool_reshape)
 
-        output = torch.cat((output, cands_periods.unsqueeze(1)), 1)
+        channel_info = torch.Tensor([-1,]*output.shape[0]).to(x.device)
 
-        psr_target_stacked = torch.cat((psr_target_stacked, psr_target_stacked[:, 2:3]), 1)
+        output = torch.cat((output, cands_periods.unsqueeze(1), channel_info.unsqueeze(1)), 1)
+
+        psr_target_stacked = torch.cat(
+            (psr_target_stacked, psr_target_stacked[:, 2:3]), 1)
 
         # Label 3 denotes psr_cands target
         psr_target_stacked[:, 2] = 3
@@ -217,7 +247,7 @@ def check_harmonic_bins(period_1, period_2, period_array, harmonics=32, bins_dis
     # pos_orig = check_pos(period_array, period_2)
 
     # code for rescaling to lower
-    pos_round = check_pos(period_array, max_per/rounded)
+    pos_round = check_pos(period_array, max_per / rounded)
     pos_orig = check_pos(period_array, min_per)
     deviation = np.abs(pos_round - pos_orig)
     if deviation < bins_distance:
