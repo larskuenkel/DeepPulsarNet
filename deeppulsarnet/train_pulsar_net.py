@@ -94,12 +94,12 @@ def main():
                         default=[0, 2000], help='Range of DM.')
     # parser.add_argument('--shift', action='store_true',
     #                     help='Shift the target according to the DM. currently broken.')
-    parser.add_argument('--loss_weights_ini', type=float, nargs=4,
-                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
-                        [classification, reconstruction, single_classifiers, candidates]')
-    parser.add_argument('--loss_weights', type=float, nargs=4,
-                        default=(0.001, 1, 1, 1), help='Loss weights used before the first noise update. \
-                        [classification, reconstruction, single_classifiers, candidates]')
+    parser.add_argument('--loss_weights_ini', type=float, nargs=5,
+                        default=(0.001, 1, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates, non_candidate classification]')
+    parser.add_argument('--loss_weights', type=float, nargs=5,
+                        default=(0.001, 1, 1, 1, 1), help='Loss weights used before the first noise update. \
+                        [classification, reconstruction, single_classifiers, candidates, non_candidate classification]')
     parser.add_argument('--train_single', action='store_false',
                         help='Do not learn individual classifiers in multi class, only learn the combined result.')
     parser.add_argument('--gauss', type=float, nargs=4,

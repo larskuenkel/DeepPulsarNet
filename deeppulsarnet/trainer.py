@@ -116,7 +116,8 @@ class trainer():
                 # ten_x.requires_grad = True
 
                 # self.net.ini_target = ten_y2
-                # torch.save(ten_y, f'./test/{step}_{batch_loop}.pt')
+                # torch.save(ten_y2, f'./test/labels_{step}_{batch_loop}.pt')
+                # torch.save(ten_y, f'./test/target_{step}_{batch_loop}.pt')
                 with (autocast() if self.amp else nullcontext()):
                     output_image, output_classifier, output_single_class, candidate_data = self.net(
                         ten_x, target=ten_y2)  # net output
@@ -493,6 +494,7 @@ class trainer():
         clas_factor = self.used_loss_weights[0]
         autoenc_factor = self.used_loss_weights[1]
         single_weight = self.used_loss_weights[2]
+        noncand_clas_factor = self.used_loss_weights[4]
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
@@ -559,23 +561,23 @@ class trainer():
                     loss_2 = loss_2_2 * single_weight + loss_2
 
             if loss_whole is not None:
-                loss_whole += loss_2 * clas_factor
+                loss_whole += loss_2 * clas_factor * noncand_clas_factor
             else:
-                loss_whole = loss_2 * clas_factor
+                loss_whole = loss_2 * clas_factor * noncand_clas_factor
 
-            if not only_class:
-                output_clas_1 = output_clas[:, 2][~torch.isnan(
-                    target_clas[:, 0])].view(-1, 1)
-                ten_y_1 = target_clas[:, 0][~torch.isnan(
-                    target_clas[:, 0])].view(-1, 1)
-                if len(output_clas_1) != 0:
-                    loss_1 = self.net.loss_1(output_clas_1, ten_y_1)
-                    weight_1 = len(output_clas_1)
-                    loss_val_1 = loss_1.data.cpu().numpy()
-                    try:
-                        self.logger.loss_meter.add(loss_val_1, weight_1)
-                    except ValueError:
-                        print('Error with loss meter.')
+            # if not only_class:
+            #     output_clas_1 = output_clas[:, 2][~torch.isnan(
+            #         target_clas[:, 0])].view(-1, 1)
+            #     ten_y_1 = target_clas[:, 0][~torch.isnan(
+            #         target_clas[:, 0])].view(-1, 1)
+            #     if len(output_clas_1) != 0:
+            #         loss_1 = self.net.loss_1(output_clas_1, ten_y_1)
+            #         weight_1 = len(output_clas_1)
+            #         loss_val_1 = loss_1.data.cpu().numpy()
+            #         try:
+            #             self.logger.loss_meter.add(loss_val_1, weight_1)
+            #         except ValueError:
+            #             print('Error with loss meter.')
 
                     # currently no single training for regression
                     # print(single_class.shape)
