@@ -95,7 +95,7 @@ class pulsar_encoder(nn.Module):
             if out_channels != model_para.tcn_2_channels:
                 layers += [weight_norm(nn.Conv1d(out_channels, model_para.tcn_2_channels, 1)),
                            nn.LeakyReLU(),
-                           nn.GroupNorm(model_para.tcn_2_groups, model_para.tcn_2_channels, affine=True)]
+                           nn.GroupNorm(model_para.tcn_2_norm_groups, model_para.tcn_2_channels, affine=True)]
         else:
             if model_para.tcn_2_channels != out_channels:
                 if levels==0:

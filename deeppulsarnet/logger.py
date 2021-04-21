@@ -147,6 +147,11 @@ class logger():
                     else:
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string_split += ' ' + mcc_string + ''
+        else:
+            self.last_val_mcc = np.nan
+            self.last_train_mcc = np.nan
+            self.last_train_mcc_sim = np.nan
+            self.last_valid_mcc_sim = np.nan
         if loss_test is None:
             if epoch==0:
                 print(f"Epoch Count | Loss Rate  | Total Loss         Split Loss:|Train (class&MSE)||Valid(class&MSE) | MCC   Train  Valid      Train(Sim   Real) Valid(Sim   Real)")

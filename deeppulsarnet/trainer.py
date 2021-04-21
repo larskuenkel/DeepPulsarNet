@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from contextlib import nullcontext
 from torch.cuda.amp import autocast, GradScaler
+import time
 
 
 class trainer():
@@ -514,6 +515,7 @@ class trainer():
 
             if target_im.shape[0]>1:
                 target_im_smooth = self.net.gauss_smooth(target_im)
+                # torch.save(target_im_smooth, f'./test/smooth_{time.time()}.pt')
 
                 if self.loss_pool_mse:
                     max_val_out, max_pos_out = torch.max(output_im_smooth, dim=1, keepdim=True)
@@ -692,12 +694,14 @@ class trainer():
  
                 label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                dm_index = self.loader.dataset.noise_df.columns.get_loc("DM")
                 for (psr, new_period) in zip(identified_psrs, identified_periods):
                     self.loader.dataset.noise_df.iat[psr, label_index] = 5
                     old_period = self.loader.dataset.noise_df.iat[psr, period_index]
 
                     self.loader.dataset.noise_df.iat[psr, period_index] = new_period
-
+                    # for now enter mean DM
+                    self.loader.dataset.noise_df.iat[psr, dm_index] = self.train_loader.dataset.mean_dm
                 if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
                     self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
                 pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
@@ -715,8 +719,10 @@ class trainer():
             for nonpsr in nonidentified_psrs:
                 label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                dm_index = self.loader.dataset.noise_df.columns.get_loc("DM")
                 self.loader.dataset.noise_df.iat[nonpsr, label_index] = 2
                 self.loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
+                self.loader.dataset.noise_df.iat[nonpsr, dm_index] = np.nan
 
     def add_test_predictions(self, output_labels, target):
         softmaxed_ini = F.softmax(output_labels[:,:2], 1)

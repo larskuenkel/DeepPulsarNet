@@ -1,6 +1,6 @@
 {
 	"class_type" : "stft",
-	"name" : "fft_bin",
+	"name" : "fft_bin_trainharm",
 	"crop_factor" : 0.5,
 	"channels" : 8,
 	"pooling" : 0,
@@ -15,5 +15,5 @@
 	"combine_harm": false,
 	"pad_factor": 1,
 	"bin_comparison": true,
-	"norm_significance":true
+	"norm_significance":false
 }

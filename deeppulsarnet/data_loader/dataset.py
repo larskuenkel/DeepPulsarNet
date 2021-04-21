@@ -53,6 +53,7 @@ class FilDataset(data_utils.Dataset):
 
         self.net_out = net_out
         self.dm_range = dm_range
+        self.mean_dm = np.mean(dm_range)
         self.dmsplit = dmsplit
 
         self.set_based = set_based

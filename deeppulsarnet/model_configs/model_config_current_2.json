@@ -10,7 +10,7 @@
 	"encoder_pooling" : 1,
 	"encoder_norm_groups" : 4,
 	"encoder_conv_groups" : 1,
-	"tcn_1_layers": 0,
+	"tcn_1_layers": 3,
 	"tcn_1_kernel": 5,
 	"tcn_1_dilation": 2,
 	"tcn_1_norm_groups": 4,

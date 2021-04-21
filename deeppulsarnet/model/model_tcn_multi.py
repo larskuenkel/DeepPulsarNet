@@ -38,7 +38,7 @@ class TemporalConvNet_single(nn.Module):
         current_input = self.ini_channels
         for i in range(self.blocks):
             dilation_size = self.dilation ** i
-            current_output = current_input + channels_added if i > 0 else num_inputs
+            current_output = current_input + channels_added# if i > 0 else num_inputs
             layers += [TemporalBlock(current_input, current_output, self.kernel_1d, stride=1, dilation=dilation_size,
                                      norm_groups=norm_groups, conv_groups=conv_groups, acausal=acausal, dropout=dropout, residual=residual)]
             current_input = current_output
