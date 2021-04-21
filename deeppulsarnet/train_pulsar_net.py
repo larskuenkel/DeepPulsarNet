@@ -180,6 +180,8 @@ def main():
                         default=1, help='Weight of the reverse prediction.')
     parser.add_argument('--amp', action='store_true',
                         help='Use automatic mixed precision (based on autocast).')
+    parser.add_argument('--channel_classification', action='store_true',
+                        help='Split the classification target into different channels based on the DM.')
 
     args = parser.parse_args()
 
@@ -366,7 +368,8 @@ def main():
                          crop=args.crop, edge=args.edge, class_weight=args.class_weight,
                          added_cands=args.added_cands, psr_cands=args.psr_cands,
                          added_channel_cands=args.added_channel_cands,
-                         cands_threshold=args.cands_threshold).to(device)
+                         cands_threshold=args.cands_threshold,
+                         channel_classification=args.channel_classification).to(device)
         net.edge = train_loader.dataset.edge
         net.device = device
         net.reset_optimizer(args.l, decay=args.decay,

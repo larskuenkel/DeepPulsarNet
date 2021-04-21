@@ -23,9 +23,9 @@ class MultiClass(nn.Module):
 
     def forward(self, x):
         # x_relu = x
-        out_tensor = torch.zeros(x.shape[0], self.output_vals).to(x.device)
+        out_tensor = torch.zeros(x.shape[0], self.output_vals, x.shape[3]).to(x.device)
         for j in range(self.number_classifiers):
-            out_tensor[:, :2] = out_tensor[:, :2] + x[:, j, :2] * self.parameter[j]
+            out_tensor[:, :2,:] = out_tensor[:, :2,:] + x[:, j, :2,:] * self.parameter[j]
         # if not self.no_reg:
         #     total_weight = torch.sum(F.relu(x[:, :, 3])+0.0001, dim=1)
         #     for j in range(self.number_classifiers):
@@ -33,8 +33,12 @@ class MultiClass(nn.Module):
         #             F.relu(x[:, j, 2]) * F.relu(x[:, j, 3])
         #     out_tensor[:, 2] = mean_period_added / total_weight 
         #     out_tensor[:, 3] = total_weight
-        softmax = F.softmax(x[:,:,:2],dim=2)
-        total_weight = torch.sum(softmax[:,:,1], dim=1)+0.0001
-        mean_period_added = torch.sum(softmax[:,:,1] * x[:,:,2], dim=1) / total_weight
-        out_tensor[:, 2] = mean_period_added
+        softmax = F.softmax(x[:,:,:2,:],dim=2)
+        # max_pos = torch.argmax(softmax[:,:,1,:],dim=1)
+        # best_period = x[torch.arange(x.shape[0]), max_pos, 2, torch.arange(x.shape[3])]
+        # out_tensor[:, 2,:] = best_period
+        total_weight = torch.sum(softmax[:,:,1,:], dim=1)+0.0001
+        mean_period_added = torch.sum(softmax[:,:,1,:] * x[:,:,2,:], dim=1) / total_weight
+        # print('multi', mean_period_added, x[:,:,2,:])
+        out_tensor[:, 2,:] = mean_period_added
         return out_tensor

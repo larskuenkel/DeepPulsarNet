@@ -156,6 +156,19 @@ class trainer():
                 loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
 
+                if output_classifier.shape[2]==1:
+                    output_classifier = output_classifier[:,:,0]
+                else:
+                    softmax = F.softmax(output_classifier[:,:2,:], 1)
+                    max_pos = torch.argmax(softmax[:,1,:],dim=1)
+                    # print(output_classifier, max_pos)
+                    # print(softmax)
+                    # print(output_classifier.shape)
+                    output_classifier = output_classifier[torch.arange(output_classifier.shape[0]),:,max_pos]
+                    # print(max_pos.shape, output_classifier.shape)
+                    # print(output_classifier)
+                # print(output_classifier.shape, ten_y2[:, 2].shape)
+
                 if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test and single_test_batch:
                     class_result_single = output_classifier[:,
                                                             0] - output_classifier[:, 1]
@@ -216,7 +229,6 @@ class trainer():
                                          ten_y2.detach().cpu().numpy().tolist(),
                                          output_single_class.detach().cpu().numpy().tolist(),
                                          cand_combined.tolist())
-
 
                 if not self.net.mode == 'dedisperse':
                     # if not self.mode == 'train':
@@ -499,6 +511,29 @@ class trainer():
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
+
+        # print(output_clas.shape, single_class.shape, target_clas.shape)
+        if output_clas.shape[2]==1:
+            output_clas = output_clas[:,:,0]
+            if len(single_class) != 0 and self.train_single and not self.mode == 'test':
+                single_class = single_class[:,:,:,0]
+        else:
+            target_clas = target_clas.unsqueeze(-1).repeat(1, 1, output_clas.shape[2])
+            for batch_element in range(target_clas.shape[0]):
+                range_low = target_clas[batch_element, 7,0]
+                range_high = target_clas[batch_element, 8,0]
+                # print(range_high, range_low)
+                for dm_element in range(target_clas.shape[2]):
+                    if dm_element< range_low or dm_element>range_high:
+                        # print('relabel', dm_element)
+                        target_clas[batch_element, 2, dm_element] = 0
+            output_clas = output_clas.transpose(1,2).reshape(output_clas.shape[0]*output_clas.shape[-1], output_clas.shape[1])
+            target_clas = target_clas.transpose(1,2).reshape(target_clas.shape[0]*target_clas.shape[-1], target_clas.shape[1])
+            if len(single_class) != 0 and self.train_single and not self.mode == 'test':
+                single_class = single_class.reshape(single_class.shape[0]*single_class.shape[-1], single_class.shape[1], single_class.shape[2])
+            # print(target_clas[:,2])
+            # print(output_clas.shape, single_class.shape, target_clas.shape)
+
         if self.net.mode != 'dedisperse':
             periods = output_clas[:, 2:]
         else:

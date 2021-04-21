@@ -33,7 +33,7 @@ class pulsar_net(nn.Module):
                  cmask=False, rfimask=False,
                  dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
                  edge=[0, 0], class_weight=[1, 1], added_cands=0, psr_cands=False, added_channel_cands=0,
-                 cands_threshold=0):
+                 cands_threshold=0, channel_classification=False):
         super().__init__()
 
         print('Creating neural net.')
@@ -67,6 +67,8 @@ class pulsar_net(nn.Module):
         self.added_channel_cands = added_channel_cands
         self.psr_cands = psr_cands
         self.cands_threshold = 0
+
+        self.channel_classification = channel_classification
 
         self.candidate_creator = candidate_creator(added_cands=self.added_cands, added_channel_cands=self.added_channel_cands,
                                                    psr_cands=self.psr_cands,
@@ -136,6 +138,10 @@ class pulsar_net(nn.Module):
         #     for classifier in self.classifiers:
         #         print(classifier)
         #         del classifier
+        if self.channel_classification:
+            self.class_channel_output = self.output_chan
+        else:
+            self.class_channel_output = 1
         if overwrite:
             if hasattr(self, 'classifiers'):
                 del self.classifiers
@@ -185,7 +191,8 @@ class pulsar_net(nn.Module):
                                                          min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
                                                          bins_max=class_para.bins_max,
                                                          remove_threshold=class_para.remove_dynamic_threshold,
-                                                         name=f"classifier_ffa{added}"))
+                                                         name=f"classifier_ffa{added}",
+                                                    ))
                 self.classifiers.append(
                     getattr(self, class_name))
 
@@ -196,7 +203,7 @@ class pulsar_net(nn.Module):
                     class_name += '_'
                 setattr(self, class_name, classifier_stft(self.out_length, self.output_resolution, class_para,
                                                           dm0_class=dm0_class,
-                                                          name=class_name))
+                                                          name=class_name, channel_classification=self.channel_classification))
                 self.classifiers.append(
                     getattr(self, class_name))
             self.classifier_names.append(class_name)
@@ -279,7 +286,7 @@ class pulsar_net(nn.Module):
             encoded = encoded[:, :, self.crop:-self.crop].contiguous()
 
         class_tensor = torch.zeros(
-            (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
+            (input.shape[0], self.used_classifiers, self.final_output, self.class_channel_output)).to(input.device)
         # switch = 0
         j = 0
         encoded = self.output_layer(encoded)
@@ -299,7 +306,7 @@ class pulsar_net(nn.Module):
                 encoded_ = self.append_dm0(input, encoded_)
         for classifier in self.classifiers:
             # print(class_tensor.shape)
-            class_tensor[:, j, :], class_data = classifier(encoded_)
+            class_tensor[:, j, :,:], class_data = classifier(encoded_)
             if self.cand_based:
                 if hasattr(classifier, 'final_cands'):
                     final_layer = classifier.final_cands
@@ -322,7 +329,7 @@ class pulsar_net(nn.Module):
             classifier_output_multi = self.multi_class(
                 class_tensor)
             return encoded, classifier_output_multi, class_tensor, (candidates, cand_targets)
-        return encoded, class_tensor[:, 0, :], torch.empty(0, requires_grad=True), (candidates, cand_targets)
+        return encoded, class_tensor[:, 0, :,:], torch.empty(0, requires_grad=True), (candidates, cand_targets)
 
     # def apply_classifier(self, input):
     #     class_tensor = torch.zeros(
