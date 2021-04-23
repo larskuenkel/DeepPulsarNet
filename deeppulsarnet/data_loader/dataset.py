@@ -84,8 +84,10 @@ class FilDataset(data_utils.Dataset):
             labels, name = grab_labels(self.df.iloc[idx], index=idx)
             sim_file = self.df.iloc[idx]['FileName']
             if len(self.noise_df)>1:
-                noise_file_index = self.noise_df.sample().index
-                noise_row = self.noise_df.loc[noise_file_index]
+                noise_file_index = torch.randint(0,len(self.psr_sim),(1,))
+                noise_row = self.psr_sim.iloc[noise_file_index]
+                # noise_file_index = self.noise_df.sample().index
+                # noise_row = self.noise_df.loc[noise_file_index]
                 labels = np.append(labels, noise_row['Unnamed: 0'])
                 noise_file = noise_row['FileName'].item()
             else:
@@ -104,14 +106,18 @@ class FilDataset(data_utils.Dataset):
             noise_file = self.noise_df.iloc[idx]['FileName']
             obs_label = int(labels[2])
             if obs_label % 2 == 0:
-                roll = np.random.uniform()
+                # roll = np.random.uniform()
+                roll = torch.rand(1)
                 choice = 1 if roll < self.sim_prob else 0
             else:
                 choice = 0
 
             if choice:
-                sim_file_index = self.psr_sim.sample().index
-                sim_row = self.psr_sim.loc[sim_file_index]
+                # if sampling from df is done without seed, the same simulations are used every epoch
+                sim_file_index = torch.randint(0,len(self.psr_sim),(1,))
+                sim_row = self.psr_sim.iloc[sim_file_index]
+                # sim_file_index = self.psr_sim.sample().index
+                # sim_row = self.psr_sim.loc[sim_file_index]
                 labels = np.append(labels, sim_row['Unnamed: 0'])
                 labels[0] = sim_row['P0']
                 labels[1] = sim_row['DM']
@@ -230,6 +236,10 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             if labels[2] == 3 or labels[2] == 5:
                 target_array.fill(np.nan)
 
+        # if not 'start' in locals():
+        #     start=-1
+        # print(file, noise, start)
+
         if not edge[1] and not edge[0]:
             return data_array, target_array
         else:
@@ -306,8 +316,11 @@ def choose_start(mode, current_file, length, start_val, down_factor=1):
     if length:
         if mode:
             samples = current_file.header['nsamples']
-            start = int(np.random.randint(500,
-                                          int(samples - length - 500) / down_factor) * down_factor)
+            # start = int(np.random.randint(500,
+            #                               int(samples - length - 500) / down_factor) * down_factor)
+            start = int(torch.randint(500, 
+                int((samples - length - 500) / down_factor), 
+                (1,)) * down_factor)
             nsamps = length
         else:
             start = start_val
