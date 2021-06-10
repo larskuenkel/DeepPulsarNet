@@ -68,7 +68,7 @@ class pulsar_net(nn.Module):
         self.psr_cands = psr_cands
         self.cands_threshold = 0
 
-        self.channel_classification = channel_classification
+        # self.channel_classification = channel_classification
 
         self.candidate_creator = candidate_creator(added_cands=self.added_cands, added_channel_cands=self.added_channel_cands,
                                                    psr_cands=self.psr_cands,
@@ -113,7 +113,7 @@ class pulsar_net(nn.Module):
             output_channels=self.output_chan)
 
         self.create_classifier_levels(
-            class_configs, no_reg, dm0_class=dm0_class)
+            class_configs, no_reg, dm0_class=dm0_class, channel_classification=channel_classification)
 
         self.create_loss_func(class_weight)
 
@@ -132,12 +132,13 @@ class pulsar_net(nn.Module):
 
         # self.crop = self.tcn.biggest_pad
 
-    def create_classifier_levels(self, class_configs, no_reg=True, overwrite=True, dm0_class=False):
+    def create_classifier_levels(self, class_configs, no_reg=True, overwrite=True, dm0_class=False, channel_classification=False):
         self.dm0_class = dm0_class
         # if hasattr(self, 'classifiers'):
         #     for classifier in self.classifiers:
         #         print(classifier)
         #         del classifier
+        self.channel_classification = channel_classification
         if self.channel_classification:
             self.class_channel_output = self.output_chan
         else:
@@ -203,7 +204,7 @@ class pulsar_net(nn.Module):
                     class_name += '_'
                 setattr(self, class_name, classifier_stft(self.out_length, self.output_resolution, class_para,
                                                           dm0_class=dm0_class,
-                                                          name=class_name, channel_classification=self.channel_classification))
+                                                          name=class_name, channel_classification=channel_classification))
                 self.classifiers.append(
                     getattr(self, class_name))
             self.classifier_names.append(class_name)
@@ -217,6 +218,18 @@ class pulsar_net(nn.Module):
             self.multi_class = MultiClass(self.used_classifiers, self.no_reg)
         else:
             self.use_multi_class = 0
+
+        for clas in self.classifiers:
+            clas.channel_classification = channel_classification
+
+        # turn of channel classification when ffa classifier is used
+        if any("ffa" in clas_name for clas_name in self.classifier_names):
+            print('No channel classification is used due to inclusion of FFA classifier.')
+            for clas in self.classifiers:
+                clas.channel_classification = False
+
+            self.channel_classification = False
+            self.class_channel_output = 1
 
     def forward(self, x, target=None):
         # y = x - tile(self.pool(x)[:,:,:], 2, 1000)
@@ -304,8 +317,9 @@ class pulsar_net(nn.Module):
         if hasattr(self, 'dm0_class'):
             if self.dm0_class:
                 encoded_ = self.append_dm0(input, encoded_)
+
+        # print(class_tensor.shape)
         for classifier in self.classifiers:
-            # print(class_tensor.shape)
             class_tensor[:, j, :,:], class_data = classifier(encoded_)
             if self.cand_based:
                 if hasattr(classifier, 'final_cands'):

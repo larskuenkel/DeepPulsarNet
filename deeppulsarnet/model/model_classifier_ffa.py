@@ -185,6 +185,7 @@ class classifier_ffa(nn.Module):
             pretrain_conv = 0
             if pretrain_conv:
                 self.pretrain_conv()
+
         self.glob_pool = nn.AdaptiveMaxPool3d(
                 (1, 1, 1), return_indices=True)
         self.final = nn.Sequential(nn.Linear(1, self.final_output))
@@ -227,7 +228,7 @@ class classifier_ffa(nn.Module):
             position_factor = 1
         periods = ffa_periods[max_pos_period * position_factor]
         output = self.final(pooled[:, :, 0, 0, 0])
-        output = torch.cat((output, periods.unsqueeze(1)), dim=1)
+        output = torch.cat((output, periods.unsqueeze(1)), dim=1).unsqueeze(2)
         return output, (out_conv[:,0,:,:,:], ffa_periods)
 
     def ini_conv(self, mean=0, std=1):
@@ -277,13 +278,14 @@ class classifier_ffa(nn.Module):
                 f'Pretraining ffa classifier failed even after after {steps} steps')
 
 
-def calc_ffa(tensor, resolution, bins_min=10, bins_max=12, min_period=0.07, max_period=1.1, remove_threshold=True):
+def calc_ffa(tensor, resolution, bins_min=8, bins_max=20, min_period=0.09, max_period=3, remove_threshold=True):
     cpu_tensor = tensor.detach().cpu().numpy()
     ini_shape = cpu_tensor.shape
     switch = 0
     for i in range(ini_shape[0]):
         for j in range(ini_shape[1]):
             # for k in range(ini_shape[2]):
+            # print(resolution, min_period, bins_min, bins_max)
             tseries = TimeSeries.from_numpy_array(cpu_tensor[i,j,:], resolution)
             ts, pgram = ffa_search(
                 tseries, period_min=min_period, period_max=max_period, bins_min=bins_min, bins_max=bins_max)

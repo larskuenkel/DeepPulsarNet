@@ -9,7 +9,7 @@
 	"only_use_amplitude" : false,
 	"min_period" : 0.09,
 	"max_period" : 3,
-	"bins_min" : 8,
-	"bins_max" : 20,
+	"bins_min" : 16,
+	"bins_max" : 40,
 	"remove_dynamic_threshold" : true
 }

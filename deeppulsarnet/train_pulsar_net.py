@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import riptide
 # Finding pulsars in filterbank data
 import torch
 import numpy as np
@@ -126,6 +126,8 @@ def main():
                         help='Choose which 5-fold to use. -1 means random validation/train set.')
     parser.add_argument('--dmsplit', action='store_false',
                         help='Do not split dm in output channels. First channel is used to train reconstruction, others are free.')
+    parser.add_argument('--manual_dmsplit', type=int, nargs='*',
+                        help='Define the dm range of each output channel. Give the start and end DM of each channel as a list.')
     parser.add_argument('--progress', action='store_false',
                         help='Do not print progress. (Nicer output with slurm).')
     parser.add_argument('--dmoverlap', type=float,
@@ -268,7 +270,8 @@ def main():
         train_loader, valid_loader, mean_period, mean_dm, mean_freq, example_shape, df_for_test, data_resolution = data_loader.create_loader(
             args.path, args.path_noise, args.samples, length, args.batch, args.edge, enc_shape=enc_shape, down_factor=down_factor,
             snr_range=args.snr_range, nulling=args.nulling, val_test=args.use_val_as_test, kfold=args.kfold,
-            dmsplit=args.dmsplit, net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
+            dmsplit=args.dmsplit, manual_dmsplit=args.manual_dmsplit,
+            net_out=model_para.output_channels, dm_range=args.dm_range, dm_overlap=args.dmoverlap,
             set_based=args.set_based, sim_prob=args.sim_prob, discard_labels=args.discard_labels)
 
     if args.path_test != '' or args.use_val_as_test:
@@ -308,11 +311,21 @@ def main():
             net.create_loss_func()
             net.to(device)
 
-            # Adding new classifiers does not curently
+        net.channel_classification = args.channel_classification
         if args.overwrite_classifier or args.add_classifier:
             net.create_classifier_levels(args.class_configs, no_reg=args.no_reg,
-                                         overwrite=args.overwrite_classifier, dm0_class=args.dm0_class)
+                                         overwrite=args.overwrite_classifier, dm0_class=args.dm0_class,
+                                         channel_classification=args.channel_classification)
             net.to(device)
+        else:
+
+            for clas in net.classifiers:
+                clas.channel_classification = args.channel_classification
+        if net.channel_classification:
+            net.class_channel_output = net.output_chan
+        else:
+            net.class_channel_output = 1
+
 
         net.reset_optimizer(args.l, decay=args.decay,
                             freeze=args.freeze, init=1)

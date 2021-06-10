@@ -4,13 +4,14 @@ import pandas as pd
 from sigpyproc.Readers import FilReader as reader
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
 
 class FilDataset(data_utils.Dataset):
         # Dataset which contains the filterbanks
     def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, 
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
-                 dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
+                 dmsplit=False, manual_dmsplit=None, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
                  set_based=False, sim_prob=0.5, discard_labels=False):
         self.df = df
         self.df.reset_index(drop=True, inplace=True)
@@ -55,20 +56,29 @@ class FilDataset(data_utils.Dataset):
         self.dm_range = dm_range
         self.mean_dm = np.mean(dm_range)
         self.dmsplit = dmsplit
+        self.manual_dmsplit = manual_dmsplit
 
         self.set_based = set_based
         self.sim_prob = sim_prob
 
-        if self.dmsplit:
-            print(dm_overlap)
-            self.dm_parts = np.linspace(dm_range[0], dm_range[1], self.net_out+1)
-            dm_overlap_total = int((self.dm_parts[1]- self.dm_parts[0])*dm_overlap)
-            self.dm_ranges = np.zeros((2, self.net_out))
-            for section in range(self.net_out):
-                self.dm_ranges[0,section] = self.dm_parts[section]-dm_overlap_total 
-                self.dm_ranges[1,section] = self.dm_parts[section+1]+dm_overlap_total
-            self.dm_ranges[0,0] = 0
-            self.dm_ranges[1,-1] = 10000
+        if self.dmsplit or self.manual_dmsplit is not None:
+            if self.manual_dmsplit is not None:
+                if len(self.manual_dmsplit) != 2 * self.net_out:
+                    print(f'manual_dmsplit requires you to provide twice the number of channels. \
+You gave {len(self.manual_dmsplit)} arguments. You need to give {2 * self.net_out}')
+                    sys.exit()
+                else:
+                    self.dm_ranges = np.asarray(self.manual_dmsplit).reshape(-1,2).T
+            else:
+                print('dm_overlap:', dm_overlap)
+                self.dm_parts = np.linspace(dm_range[0], dm_range[1], self.net_out+1)
+                dm_overlap_total = int((self.dm_parts[1]- self.dm_parts[0])*dm_overlap)
+                self.dm_ranges = np.zeros((2, self.net_out))
+                for section in range(self.net_out):
+                    self.dm_ranges[0,section] = self.dm_parts[section]-dm_overlap_total 
+                    self.dm_ranges[1,section] = self.dm_parts[section+1]+dm_overlap_total
+                self.dm_ranges[0,0] = 0
+                self.dm_ranges[1,-1] = 10000
         else:
             self.dm_ranges = None
         print('DM Ranges:')

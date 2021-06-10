@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
+# print(torch.__version__)
 from torch.cuda.amp import autocast
 
 
@@ -405,14 +406,15 @@ class classifier_stft(nn.Module):
         else:
             pool_target = [1, 1]
 
-        out_pool, max_pos = self.glob_pool(out_conv)
+        # out_pool, max_pos = self.glob_pool(out_conv)
         # print(out_pool.shape, max_pos.shape)
         out_pool, max_pos = F.adaptive_max_pool2d(out_conv,
                                                   output_size=pool_target, return_indices=True)
 
-        # print(out_pool.shape, max_pos.shape)
+        # print(out_pool)
         out_pool = out_pool.reshape(
             out_pool.shape[0] * pool_target[-1], out_pool.shape[1], 1, 1)
+        # print(out_pool)
         max_pos = max_pos.reshape(
             max_pos.shape[0] * max_pos.shape[-1], max_pos.shape[1], 1, 1)
         # print(max_pos, self.channel_classification)
@@ -442,14 +444,14 @@ class classifier_stft(nn.Module):
 
         output_period = 1 / \
             (max_pos_freq * harm_correction * self.fft_res + 0.0000001)
-        # print(output_period)
+        # print(output)
         #output_freq = output_freq.clamp(0, 5)
         #output_freq = torch.ones((x.shape[0], 1)).to(x.device)
         output = torch.cat((output, output_period), dim=1)
 
         #output = output.reshape(x.shape[0], 3, pool_target[-1])
         output = output.reshape(x.shape[0], pool_target[-1],3).transpose(1,2)
-        # print(output[:,2,:])
+        # print('after reshape in class', output[:,:2,:])
 
         periods = torch.arange(
             out_conv.shape[2], dtype=torch.float).to(out_conv.device)
@@ -467,6 +469,7 @@ class classifier_stft(nn.Module):
         #             correction = 2 **j
         #         self.channel_correction[current_channel] = correction
         # print(self.channel_correction)
+        # print(output.shape, out_conv.shape, periods.shape)
 
         return output, (out_conv, periods)
 

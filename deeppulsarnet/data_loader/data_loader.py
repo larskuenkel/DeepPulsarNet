@@ -9,7 +9,7 @@ import torch
 
 def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_period=0, mean_dm=0, mean_freq=0, val_frac=0.2, test=False, enc_shape=(1, 1000), down_factor=4,
                   snr_range=[0, 0], test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0, 0), shuffle_valid=True, val_test=False, df_val_test=None, kfold=-1,
-                  dmsplit=False, net_out=1, dm_range=[0, 2000], dm_overlap=0.25, set_based=False, sim_prob=0.5, discard_labels=False):
+                  dmsplit=False, manual_dmsplit=None,  net_out=1, dm_range=[0, 2000], dm_overlap=0.25, set_based=False, sim_prob=0.5, discard_labels=False):
         # Create train and validation loader
 
     if set_based:
@@ -66,7 +66,8 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
         print('Train set:')
         train_dataset = dataset.FilDataset(
             df.iloc[train_indices], df_noise.iloc[train_noise_indices], example_shape[0], length, 1, edge, enc_shape,
-            down_factor=down_factor, nulling=nulling, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
+            down_factor=down_factor, nulling=nulling, dmsplit=dmsplit, manual_dmsplit=manual_dmsplit,
+             net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
             set_based=set_based, sim_prob=sim_prob, discard_labels=discard_labels)
         train_loader = data_utils.DataLoader(train_dataset, shuffle=True,
                                              batch_size=batch, num_workers=1, drop_last=True)
@@ -76,7 +77,8 @@ def create_loader(csv_file, csv_noise, samples, length, batch, edge=0, mean_peri
     print('Validation set:')
     valid_dataset = dataset.FilDataset(
         df.iloc[valid_indices], df_noise.iloc[valid_noise_indices], example_shape[0], length, 0, edge, enc_shape, down_factor=down_factor, test=test,
-        test_samples=test_samples, dmsplit=dmsplit, net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
+        test_samples=test_samples, dmsplit=dmsplit, manual_dmsplit=manual_dmsplit,
+        net_out=net_out, dm_range=dm_range, dm_overlap=dm_overlap,
         set_based=set_based, sim_prob=sim_prob, discard_labels=False)
     if test:
         shuffle_valid = False

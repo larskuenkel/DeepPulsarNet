@@ -156,6 +156,24 @@ class trainer():
                 loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
 
+                if self.mode == 'train':
+
+                    if batch_loop==1:
+                        loss *= self.reverse_weight
+
+                    if not self.amp:
+                        loss.backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
+
+                            self.net.optimizer.step()  # apply gradients
+                            self.net.optimizer.zero_grad()
+                    else:
+                        self.scaler.scale(loss).backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
+                            self.scaler.step(self.net.optimizer)
+                            self.scaler.update()
+                            self.net.optimizer.zero_grad()
+
                 if output_classifier.shape[2]==1:
                     output_classifier = output_classifier[:,:,0]
                 else:
@@ -206,23 +224,6 @@ class trainer():
                     print(ten_y2)
                     print(output_classifier)
 
-                if self.mode == 'train':
-
-                    if batch_loop==1:
-                        loss *= self.reverse_weight
-
-                    if not self.amp:
-                        loss.backward(retain_graph=True)
-                        if step % self.acc_grad == 0:
-
-                            self.net.optimizer.step()  # apply gradients
-                            self.net.optimizer.zero_grad()
-                    else:
-                        self.scaler.scale(loss).backward(retain_graph=True)
-                        if step % self.acc_grad == 0:
-                            self.scaler.step(self.net.optimizer)
-                            self.scaler.update()
-                            self.net.optimizer.zero_grad()
                 # stack results for scatter plot
                 cand_combined = torch.cat((candidate_data[0].detach().cpu(), candidate_data[1].detach().cpu()), dim=1).numpy()
                 self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
@@ -463,7 +464,7 @@ class trainer():
             target_array, dtype=torch.float).unsqueeze(0).to(self.device))
         # plt.imshow(target[0,:,:], aspect='auto')
         # plt.show()
-        output_image, output_reg, output_single = self.net(data_tensor)
+        output_image, output_reg, output_single, candidates = self.net(data_tensor)
         # loss = self.calc_loss(output_image_mask, ten_y_mask,
         #                           output_classifier, ten_y2)
         output = output_image.squeeze()
@@ -475,7 +476,7 @@ class trainer():
             print(out_vals)
             print(output_single)
         # return loss
-        return output_image, output_reg, output_single
+        return output_image, output_reg, output_single, candidates
 
     def check_classifier(self):
         im, clas, single_class = self.test_target_file(self.train_loader.dataset.data_files[0], [self.noise[0] / 2, self.noise[0] / 2],
@@ -511,6 +512,7 @@ class trainer():
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
+        # print(output_clas)
 
         # print(output_clas.shape, single_class.shape, target_clas.shape)
         if output_clas.shape[2]==1:
@@ -520,6 +522,7 @@ class trainer():
         else:
             target_clas = target_clas.unsqueeze(-1).repeat(1, 1, output_clas.shape[2])
             for batch_element in range(target_clas.shape[0]):
+                ini_label = target_clas[batch_element, 2, 0].item()
                 range_low = target_clas[batch_element, 7,0]
                 range_high = target_clas[batch_element, 8,0]
                 # print(range_high, range_low)
@@ -527,10 +530,18 @@ class trainer():
                     if dm_element< range_low or dm_element>range_high:
                         # print('relabel', dm_element)
                         target_clas[batch_element, 2, dm_element] = 0
+
+                # #workaround for dm classifier in dm classifier channel_classification is not used
+                # # currently all channels contain the maxpooled result
+                # print(target_clas.shape, output_clas.shape)
+                # for clas in range(output_clas.shape[1]):
+                #     if output_clas[batch_element, clas, 0]:
+                #         print('ffa correction')
+                #         target_clas[batch_element, 2, 0] = 1
             output_clas = output_clas.transpose(1,2).reshape(output_clas.shape[0]*output_clas.shape[-1], output_clas.shape[1])
             target_clas = target_clas.transpose(1,2).reshape(target_clas.shape[0]*target_clas.shape[-1], target_clas.shape[1])
             if len(single_class) != 0 and self.train_single and not self.mode == 'test':
-                single_class = single_class.reshape(single_class.shape[0]*single_class.shape[-1], single_class.shape[1], single_class.shape[2])
+                single_class = single_class.transpose(1,3).reshape(single_class.shape[0]*single_class.shape[-1], single_class.shape[2], single_class.shape[1]).transpose(1,2)
             # print(target_clas[:,2])
             # print(output_clas.shape, single_class.shape, target_clas.shape)
 
@@ -583,7 +594,7 @@ class trainer():
         if self.net.mode != 'dedisperse':
             output_clas_2 = output_clas[:, :2]
             ten_y_2 = torch.fmod(target_clas[:, 2],2).long()
-
+            # print('total', output_clas_2, ten_y_2)
             loss_2 = self.net.loss_2(output_clas_2, ten_y_2)
             # print(loss_2)
             loss_val_2 = loss_2.data.cpu().numpy()
@@ -593,8 +604,9 @@ class trainer():
             if len(single_class) != 0 and self.train_single and not self.mode == 'test':
                 for j in range(single_class.shape[1]):
                     single_out = single_class[:, j, :2]
+
                     loss_2_2 = self.net.loss_2(single_out, ten_y_2)
-                    # print(loss_2_2)
+                    # print('single', single_out, ten_y_2)
                     loss_2 = loss_2_2 * single_weight + loss_2
 
             if loss_whole is not None:
