@@ -16,7 +16,7 @@ class OutputLayer(nn.Module):
         if intermediate > 1 and kernel != 0:
             layers += [nn.Dropout2d(dropout),
                        TemporalBlock(input_channels, intermediate, kernel, stride=1, dilation=1,
-                                     groups=1, residual=residual, final_norm=False),
+                                     norm_groups=1,conv_groups=1, residual=residual, final_norm=False),
                        nn.Conv1d(intermediate, output_channels, 1)]
         elif intermediate > 1:
             layers += [nn.Dropout2d(dropout),

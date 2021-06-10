@@ -1,16 +1,20 @@
-from model import model_smooth
+#from model import model_smooth
 import torch
 import numpy as np
 from data_loader import dataset
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+from contextlib import nullcontext
+from torch.cuda.amp import autocast, GradScaler
+import time
 
 
 class trainer():
     #  class to store training and data augmentation routines
     def __init__(self, net, train_loader, valid_loader, test_loader, logger, device, noise, threshold, lr, 
                  loss_weights_ini=(0.001, 1, 1, 1), loss_weights=(0.001, 1, 1, 1), train_single=True, fft_loss=False, acf_loss=False, reduce_test=True, test_frac=0.1, acc_grad=1,
-                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5], relabel_validation=False, reverse_weight=1):
+                 loss_pool_mse=False, bandpass=False, relabel_set =False, relabel_thresholds=[0.95, 0.5], relabel_validation=False, reverse_weight=1,
+                 amp=False):
         self.train_loader = train_loader
         self.valid_loader = valid_loader
         self.test_loader = test_loader
@@ -18,7 +22,6 @@ class trainer():
         self.net = net
         self.device = device
         self.bandpass = 0
-        self.smooth = model_smooth.smooth().to(device)
         self.noise = noise
         self.threshold = threshold
         self.last_noise_update = -1
@@ -53,6 +56,9 @@ class trainer():
         self.relabel_validation = relabel_validation
 
         self.reverse_weight = reverse_weight
+        self.amp = amp
+        if self.amp:
+            self.scaler = GradScaler()
 
 
     def run(self, mode, loops, only_class=0, print_out=0, store_stats=False, print_progress=True, store_tseries=False, reverse_batch=False):
@@ -94,8 +100,10 @@ class trainer():
                     ten_x = ten_x.flip(2)
                     ten_y = torch.zeros_like(ten_y)
                     #ten_y2 = torch.zeros_like(ten_y2)
-                    null_indices = [0,1,2]
+                    null_indices = [2]
                     ten_y2[:,null_indices] = 0
+                    nan_indices = [0,1]
+                    ten_y2[:,nan_indices] = np.nan
 
                 # ten_x = x.to(self.device).float()
 
@@ -109,8 +117,20 @@ class trainer():
                 # ten_x.requires_grad = True
 
                 # self.net.ini_target = ten_y2
-                output_image, output_classifier, output_single_class, candidate_data = self.net(
-                    ten_x, target=ten_y2)  # net output
+                # torch.save(ten_y2, f'./test/labels_{step}_{batch_loop}.pt')
+                # torch.save(ten_y, f'./test/target_{step}_{batch_loop}.pt')
+                with (autocast() if self.amp else nullcontext()):
+                    output_image, output_classifier, output_single_class, candidate_data = self.net(
+                        ten_x, target=ten_y2)  # net output
+                    loss, periods = self.calc_loss(output_image, ten_y,
+                                               output_classifier, ten_y2, only_class, single_class=output_single_class)
+                    try:
+                        if candidate_data[0].shape[0]>1:
+                            cand_loss = self.calc_cand_loss(candidate_data)
+                            loss = loss + cand_loss
+                    except:
+                        print('Error with candidate loss calculation')
+                        pass
 
                 if store_tseries:
                     torch.save(output_image, f'tseries_{int(ten_y2[0, 3])}.pt')
@@ -130,15 +150,42 @@ class trainer():
                         self.crop, ten_y, output_image)
 
 
-                loss, periods = self.calc_loss(output_image, ten_y,
-                                               output_classifier, ten_y2, only_class, single_class=output_single_class)
-
-                if candidate_data[0].shape[0]>1:
-                    cand_loss = self.calc_cand_loss(candidate_data)
-                    loss = loss + cand_loss
+                # loss, periods = self.calc_loss(output_image, ten_y,
+                #                                output_classifier, ten_y2, only_class, single_class=output_single_class)
 
                 loss /= np.sum(self.used_loss_weights)
                 loss = loss / self.acc_grad
+
+                if self.mode == 'train':
+
+                    if batch_loop==1:
+                        loss *= self.reverse_weight
+
+                    if not self.amp:
+                        loss.backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
+
+                            self.net.optimizer.step()  # apply gradients
+                            self.net.optimizer.zero_grad()
+                    else:
+                        self.scaler.scale(loss).backward(retain_graph=True)
+                        if step % self.acc_grad == 0:
+                            self.scaler.step(self.net.optimizer)
+                            self.scaler.update()
+                            self.net.optimizer.zero_grad()
+
+                if output_classifier.shape[2]==1:
+                    output_classifier = output_classifier[:,:,0]
+                else:
+                    softmax = F.softmax(output_classifier[:,:2,:], 1)
+                    max_pos = torch.argmax(softmax[:,1,:],dim=1)
+                    # print(output_classifier, max_pos)
+                    # print(softmax)
+                    # print(output_classifier.shape)
+                    output_classifier = output_classifier[torch.arange(output_classifier.shape[0]),:,max_pos]
+                    # print(max_pos.shape, output_classifier.shape)
+                    # print(output_classifier)
+                # print(output_classifier.shape, ten_y2[:, 2].shape)
 
                 if mode == 'test' and self.net.mode != 'dedisperse' and self.reduce_test and single_test_batch:
                     class_result_single = output_classifier[:,
@@ -177,23 +224,12 @@ class trainer():
                     print(ten_y2)
                     print(output_classifier)
 
-                if self.mode == 'train':
-
-                    if batch_loop==1:
-                        loss *= self.reverse_weight
-
-                    loss.backward(retain_graph=True)
-                    if step % self.acc_grad == 0:
-
-                        self.net.optimizer.step()  # apply gradients
-                        self.net.optimizer.zero_grad()
                 # stack results for scatter plot
                 cand_combined = torch.cat((candidate_data[0].detach().cpu(), candidate_data[1].detach().cpu()), dim=1).numpy()
                 self.logger.stack_output(class_estimate.detach().cpu().numpy().tolist(),
                                          ten_y2.detach().cpu().numpy().tolist(),
                                          output_single_class.detach().cpu().numpy().tolist(),
                                          cand_combined.tolist())
-
 
                 if not self.net.mode == 'dedisperse':
                     # if not self.mode == 'train':
@@ -424,11 +460,11 @@ class trainer():
         data_tensor = torch.tensor(
             data, dtype=torch.float).unsqueeze(0).to(self.device)
         # data_tensor = self.noise_and_norm(data_tensor, 2)
-        target = self.smooth(torch.tensor(
+        target = self.net.gauss_smooth(torch.tensor(
             target_array, dtype=torch.float).unsqueeze(0).to(self.device))
         # plt.imshow(target[0,:,:], aspect='auto')
         # plt.show()
-        output_image, output_reg, output_single = self.net(data_tensor)
+        output_image, output_reg, output_single, candidates = self.net(data_tensor)
         # loss = self.calc_loss(output_image_mask, ten_y_mask,
         #                           output_classifier, ten_y2)
         output = output_image.squeeze()
@@ -440,7 +476,7 @@ class trainer():
             print(out_vals)
             print(output_single)
         # return loss
-        return output_image, output_reg, output_single
+        return output_image, output_reg, output_single, candidates
 
     def check_classifier(self):
         im, clas, single_class = self.test_target_file(self.train_loader.dataset.data_files[0], [self.noise[0] / 2, self.noise[0] / 2],
@@ -472,9 +508,43 @@ class trainer():
         clas_factor = self.used_loss_weights[0]
         autoenc_factor = self.used_loss_weights[1]
         single_weight = self.used_loss_weights[2]
+        noncand_clas_factor = self.used_loss_weights[4]
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
+        # print(output_clas)
+
+        # print(output_clas.shape, single_class.shape, target_clas.shape)
+        if output_clas.shape[2]==1:
+            output_clas = output_clas[:,:,0]
+            if len(single_class) != 0 and self.train_single and not self.mode == 'test':
+                single_class = single_class[:,:,:,0]
+        else:
+            target_clas = target_clas.unsqueeze(-1).repeat(1, 1, output_clas.shape[2])
+            for batch_element in range(target_clas.shape[0]):
+                ini_label = target_clas[batch_element, 2, 0].item()
+                range_low = target_clas[batch_element, 7,0]
+                range_high = target_clas[batch_element, 8,0]
+                # print(range_high, range_low)
+                for dm_element in range(target_clas.shape[2]):
+                    if dm_element< range_low or dm_element>range_high:
+                        # print('relabel', dm_element)
+                        target_clas[batch_element, 2, dm_element] = 0
+
+                # #workaround for dm classifier in dm classifier channel_classification is not used
+                # # currently all channels contain the maxpooled result
+                # print(target_clas.shape, output_clas.shape)
+                # for clas in range(output_clas.shape[1]):
+                #     if output_clas[batch_element, clas, 0]:
+                #         print('ffa correction')
+                #         target_clas[batch_element, 2, 0] = 1
+            output_clas = output_clas.transpose(1,2).reshape(output_clas.shape[0]*output_clas.shape[-1], output_clas.shape[1])
+            target_clas = target_clas.transpose(1,2).reshape(target_clas.shape[0]*target_clas.shape[-1], target_clas.shape[1])
+            if len(single_class) != 0 and self.train_single and not self.mode == 'test':
+                single_class = single_class.transpose(1,3).reshape(single_class.shape[0]*single_class.shape[-1], single_class.shape[2], single_class.shape[1]).transpose(1,2)
+            # print(target_clas[:,2])
+            # print(output_clas.shape, single_class.shape, target_clas.shape)
+
         if self.net.mode != 'dedisperse':
             periods = output_clas[:, 2:]
         else:
@@ -491,6 +561,7 @@ class trainer():
 
             if target_im.shape[0]>1:
                 target_im_smooth = self.net.gauss_smooth(target_im)
+                # torch.save(target_im_smooth, f'./test/smooth_{time.time()}.pt')
 
                 if self.loss_pool_mse:
                     max_val_out, max_pos_out = torch.max(output_im_smooth, dim=1, keepdim=True)
@@ -516,30 +587,6 @@ class trainer():
             else:
                 loss_whole = None
 
-            # if self.fft_loss or self.acf_loss:
-            #     loss_whole_im = loss_whole_im * \
-            #         np.max((0, 1 - self.fft_loss - self.acf_loss))
-            # if self.fft_loss:
-            #     # print(self.fft_loss)
-            #     output_fft = self.net.classifier_fft.compute_fft(
-            #         output_im_smooth, harmonics=0)[:, 0, :]
-            #     target_fft = self.net.classifier_fft.compute_fft(
-            #         target_im, harmonics=0)[:, 0, :]
-            #     loss_fft = self.net.loss_autoenc(
-            #         output_fft, target_fft)
-            #     loss_whole_im = loss_whole_im + loss_fft * self.fft_loss
-
-            # if self.acf_loss:
-            #     acf_padding = 500
-            #     output_acf = self.calc_acf(output_im_smooth, padding=acf_padding)[
-            #         0, :, :] * self.acf_scale
-            #     target_acf = self.calc_acf(target_im_smooth, padding=acf_padding)[
-            #         0, :, :] * self.acf_scale
-            #     loss_acf = self.net.loss_autoenc(
-            #         output_acf, target_acf)
-            #     loss_whole_im = loss_whole_im + loss_acf * self.acf_loss
-
-
         else:
             loss_whole = None
 
@@ -547,7 +594,7 @@ class trainer():
         if self.net.mode != 'dedisperse':
             output_clas_2 = output_clas[:, :2]
             ten_y_2 = torch.fmod(target_clas[:, 2],2).long()
-
+            # print('total', output_clas_2, ten_y_2)
             loss_2 = self.net.loss_2(output_clas_2, ten_y_2)
             # print(loss_2)
             loss_val_2 = loss_2.data.cpu().numpy()
@@ -557,29 +604,29 @@ class trainer():
             if len(single_class) != 0 and self.train_single and not self.mode == 'test':
                 for j in range(single_class.shape[1]):
                     single_out = single_class[:, j, :2]
+
                     loss_2_2 = self.net.loss_2(single_out, ten_y_2)
-                    # print(loss_2_2)
+                    # print('single', single_out, ten_y_2)
                     loss_2 = loss_2_2 * single_weight + loss_2
 
             if loss_whole is not None:
-                loss_whole += loss_2 * clas_factor
+                loss_whole += loss_2 * clas_factor * noncand_clas_factor
             else:
-                loss_whole = loss_2 * clas_factor
+                loss_whole = loss_2 * clas_factor * noncand_clas_factor
 
-            if not only_class:
-                output_clas_1 = output_clas[:, 2][~torch.isnan(
-                    target_clas[:, 0])].view(-1, 1)
-                ten_y_1 = target_clas[:, 0][~torch.isnan(
-                    target_clas[:, 0])].view(-1, 1)
-                if len(output_clas_1) != 0:
-                    # print(output_clas_1, ten_y_1)
-                    loss_1 = self.net.loss_1(output_clas_1, ten_y_1)
-                    weight_1 = len(output_clas_1)
-                    loss_val_1 = loss_1.data.cpu().numpy()
-                    try:
-                        self.logger.loss_meter.add(loss_val_1, weight_1)
-                    except ValueError:
-                        print('Error with loss meter.')
+            # if not only_class:
+            #     output_clas_1 = output_clas[:, 2][~torch.isnan(
+            #         target_clas[:, 0])].view(-1, 1)
+            #     ten_y_1 = target_clas[:, 0][~torch.isnan(
+            #         target_clas[:, 0])].view(-1, 1)
+            #     if len(output_clas_1) != 0:
+            #         loss_1 = self.net.loss_1(output_clas_1, ten_y_1)
+            #         weight_1 = len(output_clas_1)
+            #         loss_val_1 = loss_1.data.cpu().numpy()
+            #         try:
+            #             self.logger.loss_meter.add(loss_val_1, weight_1)
+            #         except ValueError:
+            #             print('Error with loss meter.')
 
                     # currently no single training for regression
                     # print(single_class.shape)
@@ -601,14 +648,15 @@ class trainer():
             #         loss_whole /= (clas_factor + autoenc_factor)
             # else:
             #     loss_whole /= (clas_factor)
-        else:
-            if not loss_whole == None:
-                loss_whole = None
+        # else:
+        #     if not loss_whole == None:
+        #         loss_whole = None
         return loss_whole, periods
 
     def calc_cand_loss(self, cand_data):
 
         weight_factor = self.used_loss_weights[3] * self.used_loss_weights[0]
+        cand_data = self.label_channel_targets(cand_data)
         output = cand_data[0][:,:2]
         target = torch.fmod(cand_data[1][:,2],2).long()
 
@@ -616,17 +664,37 @@ class trainer():
 
         return cand_loss
 
-    def estimate_period(self, tensor):
-        conv_factor = 0.00064 * 4
-        # tensor_reshaped = tensor.permute(1, 0, 2)
-        # tensor_acf = F.conv1d(tensor_reshaped, tensor,
-        #                       padding=2500, groups=tensor.shape[0])
-        tensor_acf = self.calc_acf(tensor)
-        middle = int(tensor_acf.shape[2] / 2)
-        part_acf = tensor_acf[:, :, middle + 100:]
-        max_vals = torch.argmax(part_acf, dim=2).float()
-        periods = (max_vals + 100) * conv_factor  # / self.net.mean_vals[0]
-        return periods.permute(1, 0).float()
+    def label_channel_targets(self, cand_data):
+        output = cand_data[0]
+        target = cand_data[1]
+        dm_ranges = target[:,7:9]
+        # print(target[:,2])
+        # not sure how to easily without iterating
+        # iterate through candidates and set label for channel candidates based on target DM
+        for i in range(output.shape[0]):
+            # do not relabel global candidates
+            channel_info = output[i, 3]
+            if channel_info != -1:
+                if not (channel_info >= dm_ranges[i,0] and channel_info <=dm_ranges[i,1]):
+                    target[i, 2] = 0
+        # print(target[:,2])
+        # print(target[:,7:9])
+        # print(output[:,3:])
+        # print('----')
+
+        return (output, target)
+
+    # def estimate_period(self, tensor):
+    #     conv_factor = 0.00064 * 4
+    #     # tensor_reshaped = tensor.permute(1, 0, 2)
+    #     # tensor_acf = F.conv1d(tensor_reshaped, tensor,
+    #     #                       padding=2500, groups=tensor.shape[0])
+    #     tensor_acf = self.calc_acf(tensor)
+    #     middle = int(tensor_acf.shape[2] / 2)
+    #     part_acf = tensor_acf[:, :, middle + 100:]
+    #     max_vals = torch.argmax(part_acf, dim=2).float()
+    #     periods = (max_vals + 100) * conv_factor  # / self.net.mean_vals[0]
+    #     return periods.permute(1, 0).float()
 
     def crop_target_output(self, crop, target, output):
         return target[:, :, crop:-crop], output  # [:, :, crop:-crop]
@@ -673,12 +741,14 @@ class trainer():
  
                 label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                dm_index = self.loader.dataset.noise_df.columns.get_loc("DM")
                 for (psr, new_period) in zip(identified_psrs, identified_periods):
                     self.loader.dataset.noise_df.iat[psr, label_index] = 5
                     old_period = self.loader.dataset.noise_df.iat[psr, period_index]
 
                     self.loader.dataset.noise_df.iat[psr, period_index] = new_period
-
+                    # for now enter mean DM
+                    self.loader.dataset.noise_df.iat[psr, dm_index] = self.train_loader.dataset.mean_dm
                 if not 'Pulsar Prediction' in self.loader.dataset.noise_df.columns:
                     self.loader.dataset.noise_df["Pulsar Prediction"] = -1.
                 pred_index = self.loader.dataset.noise_df.columns.get_loc("Pulsar Prediction")
@@ -696,8 +766,10 @@ class trainer():
             for nonpsr in nonidentified_psrs:
                 label_index = self.loader.dataset.noise_df.columns.get_loc("Label")
                 period_index = self.loader.dataset.noise_df.columns.get_loc("P0")
+                dm_index = self.loader.dataset.noise_df.columns.get_loc("DM")
                 self.loader.dataset.noise_df.iat[nonpsr, label_index] = 2
                 self.loader.dataset.noise_df.iat[nonpsr, period_index] = np.nan
+                self.loader.dataset.noise_df.iat[nonpsr, dm_index] = np.nan
 
     def add_test_predictions(self, output_labels, target):
         softmaxed_ini = F.softmax(output_labels[:,:2], 1)

@@ -4,13 +4,14 @@ import pandas as pd
 from sigpyproc.Readers import FilReader as reader
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
 
 class FilDataset(data_utils.Dataset):
         # Dataset which contains the filterbanks
     def __init__(self, df, df_noise, channels, length, mode, edge=0, enc_shape=(1, 1000), test=False, down_factor=4, 
                  test_samples=11, nulling=(0, 0, 0, 0, 0, 0, 0),
-                 dmsplit=False, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
+                 dmsplit=False, manual_dmsplit=None, net_out=1, dm_range=(0,10000), dm_overlap = 1/4,
                  set_based=False, sim_prob=0.5, discard_labels=False):
         self.df = df
         self.df.reset_index(drop=True, inplace=True)
@@ -53,21 +54,31 @@ class FilDataset(data_utils.Dataset):
 
         self.net_out = net_out
         self.dm_range = dm_range
+        self.mean_dm = np.mean(dm_range)
         self.dmsplit = dmsplit
+        self.manual_dmsplit = manual_dmsplit
 
         self.set_based = set_based
         self.sim_prob = sim_prob
 
-        if self.dmsplit:
-            print(dm_overlap)
-            self.dm_parts = np.linspace(dm_range[0], dm_range[1], self.net_out+1)
-            dm_overlap_total = int((self.dm_parts[1]- self.dm_parts[0])*dm_overlap)
-            self.dm_ranges = np.zeros((2, self.net_out))
-            for section in range(self.net_out):
-                self.dm_ranges[0,section] = self.dm_parts[section]-dm_overlap_total 
-                self.dm_ranges[1,section] = self.dm_parts[section+1]+dm_overlap_total
-            self.dm_ranges[0,0] = 0
-            self.dm_ranges[1,-1] = 10000
+        if self.dmsplit or self.manual_dmsplit is not None:
+            if self.manual_dmsplit is not None:
+                if len(self.manual_dmsplit) != 2 * self.net_out:
+                    print(f'manual_dmsplit requires you to provide twice the number of channels. \
+You gave {len(self.manual_dmsplit)} arguments. You need to give {2 * self.net_out}')
+                    sys.exit()
+                else:
+                    self.dm_ranges = np.asarray(self.manual_dmsplit).reshape(-1,2).T
+            else:
+                print('dm_overlap:', dm_overlap)
+                self.dm_parts = np.linspace(dm_range[0], dm_range[1], self.net_out+1)
+                dm_overlap_total = int((self.dm_parts[1]- self.dm_parts[0])*dm_overlap)
+                self.dm_ranges = np.zeros((2, self.net_out))
+                for section in range(self.net_out):
+                    self.dm_ranges[0,section] = self.dm_parts[section]-dm_overlap_total 
+                    self.dm_ranges[1,section] = self.dm_parts[section+1]+dm_overlap_total
+                self.dm_ranges[0,0] = 0
+                self.dm_ranges[1,-1] = 10000
         else:
             self.dm_ranges = None
         print('DM Ranges:')
@@ -83,8 +94,10 @@ class FilDataset(data_utils.Dataset):
             labels, name = grab_labels(self.df.iloc[idx], index=idx)
             sim_file = self.df.iloc[idx]['FileName']
             if len(self.noise_df)>1:
-                noise_file_index = self.noise_df.sample().index
-                noise_row = self.noise_df.loc[noise_file_index]
+                noise_file_index = torch.randint(0,len(self.psr_sim),(1,))
+                noise_row = self.psr_sim.iloc[noise_file_index]
+                # noise_file_index = self.noise_df.sample().index
+                # noise_row = self.noise_df.loc[noise_file_index]
                 labels = np.append(labels, noise_row['Unnamed: 0'])
                 noise_file = noise_row['FileName'].item()
             else:
@@ -103,14 +116,18 @@ class FilDataset(data_utils.Dataset):
             noise_file = self.noise_df.iloc[idx]['FileName']
             obs_label = int(labels[2])
             if obs_label % 2 == 0:
-                roll = np.random.uniform()
+                # roll = np.random.uniform()
+                roll = torch.rand(1)
                 choice = 1 if roll < self.sim_prob else 0
             else:
                 choice = 0
 
             if choice:
-                sim_file_index = self.psr_sim.sample().index
-                sim_row = self.psr_sim.loc[sim_file_index]
+                # if sampling from df is done without seed, the same simulations are used every epoch
+                sim_file_index = torch.randint(0,len(self.psr_sim),(1,))
+                sim_row = self.psr_sim.iloc[sim_file_index]
+                # sim_file_index = self.psr_sim.sample().index
+                # sim_row = self.psr_sim.loc[sim_file_index]
                 labels = np.append(labels, sim_row['Unnamed: 0'])
                 labels[0] = sim_row['P0']
                 labels[1] = sim_row['DM']
@@ -133,18 +150,19 @@ class FilDataset(data_utils.Dataset):
             dm_indexes = [0]
             self.net_out = 1
 
-        if len(dm_indexes)<1:
-            labels = np.append(labels, -1)
-        else:
-            labels = np.append(labels, dm_indexes[0])
 
-        noisy_data, orig_data = load_filterbank(
+        if len(dm_indexes)<1:
+            labels = np.concatenate((labels, -1, -1), axis=None)
+        else:
+            labels = np.concatenate((labels, dm_indexes[0], dm_indexes[-1]), axis=None)
+
+        noisy_data, target_data = load_filterbank(
             sim_file, self.length, self.mode, target_file, noise_file, self.noise, edge=self.edge, test=self.test, labels=labels, enc_length=self.enc_shape[
                 1], down_factor=self.down_factor,
             dm=labels[1], test_samples=self.test_samples, name=name, nulling=self.nulling,
             dmsplit=self.dmsplit, dm_indexes=dm_indexes, net_out=self.net_out)
-        # print(noisy_data.shape, orig_data.shape)
-        return noisy_data, orig_data, labels
+        # print(noisy_data.shape, target_data.shape)
+        return noisy_data, target_data, labels
 
     def __len__(self):
         if not self.set_based:
@@ -228,11 +246,13 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             if labels[2] == 3 or labels[2] == 5:
                 target_array.fill(np.nan)
 
-        # print(data_array.shape)
+        # if not 'start' in locals():
+        #     start=-1
+        # print(file, noise, start)
+
         if not edge[1] and not edge[0]:
             return data_array, target_array
         else:
-            # print(data_array, orig_array, edge)
             if not edge[1]:
                 return data_array[edge[0]:, :], target_array
             else:
@@ -306,8 +326,11 @@ def choose_start(mode, current_file, length, start_val, down_factor=1):
     if length:
         if mode:
             samples = current_file.header['nsamples']
-            start = int(np.random.randint(500,
-                                          int(samples - length - 500) / down_factor) * down_factor)
+            # start = int(np.random.randint(500,
+            #                               int(samples - length - 500) / down_factor) * down_factor)
+            start = int(torch.randint(500, 
+                int((samples - length - 500) / down_factor), 
+                (1,)) * down_factor)
             nsamps = length
         else:
             start = start_val

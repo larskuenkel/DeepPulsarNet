@@ -50,7 +50,7 @@ class Chomp1d_acausal_2d(nn.Module):
 
 
 class TemporalBlock(nn.Module):
-    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, causal=0, groups=8, acausal=1, dropout=0, residual=True, final_norm=True):
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, causal=0, norm_groups=4, conv_groups=1, acausal=1, dropout=0, residual=True, final_norm=True):
         super().__init__()
         if acausal:
             chomp = Chomp1d_acausal
@@ -60,14 +60,14 @@ class TemporalBlock(nn.Module):
         padding = (kernel_size - 1) * dilation
 
         self.net = nn.Sequential(weight_norm(nn.Conv1d(n_inputs, n_outputs, kernel_size,
-                                                       stride=stride, padding=padding, dilation=dilation, groups=groups)),
+                                                       stride=stride, padding=padding, dilation=dilation, groups=conv_groups)),
                                  chomp(padding),
                                  nn.LeakyReLU(),
                                  nn.GroupNorm(
-                                     groups, n_outputs, affine=True),
+                                     norm_groups, n_outputs, affine=True),
                                  nn.Dropout(dropout),
                                  weight_norm(nn.Conv1d(n_outputs, n_outputs, kernel_size,
-                                                       stride=stride, padding=padding, dilation=dilation, groups=groups)),
+                                                       stride=stride, padding=padding, dilation=dilation, groups=conv_groups)),
                                  chomp(padding),
                                  nn.LeakyReLU(),
                                  # nn.GroupNorm(
@@ -77,7 +77,7 @@ class TemporalBlock(nn.Module):
 
         if final_norm:
             self.net.add_module(str(len(self.net)+1), nn.GroupNorm(
-                                     groups, n_outputs, affine=True))
+                                     norm_groups, n_outputs, affine=True))
         self.net.add_module(str(len(self.net)+1), nn.Dropout(dropout))
 
 

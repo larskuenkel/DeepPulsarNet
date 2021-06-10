@@ -5,10 +5,10 @@
 	"nn_layers" : 2,
 	"channels" : 8,
 	"kernel" : 11,
-	"norm" : true,
+	"norm" : false,
 	"only_use_amplitude" : false,
 	"min_period" : 0.09,
-	"max_period" : 1.05,
+	"max_period" : 3,
 	"bins_min" : 8,
 	"bins_max" : 20,
 	"remove_dynamic_threshold" : true

@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 from torch import optim
+# print(torch.__version__)
+from torch.cuda.amp import autocast
 
 
 class Flatten(nn.Module):
@@ -86,22 +88,49 @@ class Height_conv(nn.Module):
             return output
 
 
-def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, harmonics=0, harmonic_downsample=False, no_adding=False):
+def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harmonics=0, harmonic_downsample=False, no_adding=False, pad_factor=0,
+                 bin_comparison=False):
+    x = x - x.mean(dim=2, keepdim=True)
+    switch = 0
+
+    # if pad_factor!=0:
+    #     pad_val = int(x.shape[2] * pad_factor)
+    #     x = F.pad(x, (0, pad_val))
+
     if length == 0:
         length = x.shape[2]
     if hop_length == 0:
         hop_length = length
-    x = x - x.mean(dim=2, keepdim=True)
-    switch = 0
+
     for j in range(x.shape[1]):
         added_harmonics = 0
         stft_count = 0
         switch_harm = 0
-        stft = torch.stft(x[:, j, :], length, hop_length=hop_length, win_length=None,
-                          window=None, center=False, normalized=True, onesided=True,return_complex=False)
+        if pad_factor == 0:
+            stft = torch.stft(x[:, j, :], length, hop_length=hop_length, win_length=None,
+                              window=None, center=False, normalized=True, onesided=True, return_complex=False)
+        else:
+            nfft = int(length + pad_factor * length)
+            hop_length += 1
+            win_length = length
 
-        power_stft = stft[:, :crop, :, 0] ** 2 + \
-            stft[:, :crop, :, 1] ** 2
+            stft = torch.stft(x[:, j, :], nfft, hop_length=hop_length, win_length=nfft,
+                              window=None, center=True, normalized=True, onesided=True, return_complex=False, pad_mode='constant')
+            # print(stft.shape)
+
+        if not bin_comparison:
+            power_stft = stft[:, :crop, :, 0] ** 2 + \
+                stft[:, :crop, :, 1] ** 2
+        else:
+            ini_power_stft = stft[:, :crop, :, 0] ** 2 + \
+                stft[:, :crop, :, 1] ** 2
+            bin_stft = stft + torch.roll(stft, 1, 1)
+            bin_power_stft = (bin_stft[:, :crop, :, 0] ** 2 +
+                              bin_stft[:, :crop, :, 1] ** 2) / 2
+            stack_stft = torch.stack(
+                (ini_power_stft, bin_power_stft, torch.roll(bin_power_stft, 1, -1)), -1)
+
+            power_stft, _ = torch.max(stack_stft, -1)
 
         for harm_counter in range(2 ** harmonics):
             if harm_counter == 0:
@@ -115,9 +144,9 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
                     # print(added, upsampled)
                 else:
                     downsampled = F.max_pool1d(power_stft.transpose(
-                        2, 1), kernel_size=(harm_counter + 1),stride=(harm_counter + 1)).transpose(2, 1)[:, :crop, :]
+                        2, 1), kernel_size=(harm_counter + 1), stride=(harm_counter + 1)).transpose(2, 1)[:, :crop, :]
                     pad_val = added.shape[1] - downsampled.shape[1]
-                    new_harm_series = F.pad(downsampled, (0,0,0,pad_val))
+                    new_harm_series = F.pad(downsampled, (0, 0, 0, pad_val))
                     # added = added[:, :, :] + downsampled
                 if not no_adding:
                     added = added[:, :, :] + new_harm_series
@@ -125,11 +154,13 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
                     if switch_harm == 0:
                         # print(x.shape, power_stft.shape, downsampled.shape)
                         # out_harm = downsampled.unsqueeze(3).unsqueeze(4)
-                        out_harm = torch.cat((power_stft.unsqueeze(3).unsqueeze(4), new_harm_series.unsqueeze(3).unsqueeze(4)), dim=4)
+                        out_harm = torch.cat((power_stft.unsqueeze(3).unsqueeze(
+                            4), new_harm_series.unsqueeze(3).unsqueeze(4)), dim=4)
                         switch_harm = 1
                     else:
                         # print(x.shape, power_stft.shape, downsampled.shape)
-                        out_harm = torch.cat((out_harm, new_harm_series.unsqueeze(3).unsqueeze(4)), dim=4)
+                        out_harm = torch.cat(
+                            (out_harm, new_harm_series.unsqueeze(3).unsqueeze(4)), dim=4)
                         # print(out_harm.shape)
                     # print(added, downsampled, pad_val)
                 # print(added.device, added.shape)
@@ -173,9 +204,16 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=None, norm=0, h
 
 
 class classifier_stft(nn.Module):
-    def __init__(self, input_length, input_resolution, class_para, name='', dm0_class=False):
+    def __init__(self, input_length, input_resolution, class_para, name='', dm0_class=False, channel_classification=False):
         super().__init__()
         self.input_length = input_length
+        self.pad_factor = class_para.pad_factor
+        # if class_para.stft_count==1:
+        #     self.pad_factor = class_para.pad_factor
+        # else:
+        #     self.pad_factor = 0
+        # if self.pad_factor!=0:
+        #     self.input_length += int(self.input_length * self.pad_factor)
         #self.crop = int(crop_factor * (self.input_length // 2))
         self.final_output = 2
         self.crop_factor = class_para.crop_factor
@@ -191,7 +229,15 @@ class classifier_stft(nn.Module):
         self.use_center = False
 
         self.stft_count = class_para.stft_count
-        print(input_length)
+        self.bin_comparison = class_para.bin_comparison
+
+        self.channel_classification = channel_classification
+
+        if hasattr(class_para, 'norm_significance'):
+            self.norm_significance = class_para.norm_significance
+        else:
+            norm_significance = False
+        # print(input_length)
 
         max_height = 2 ** (self.stft_count - 1)
         self.lengths = []
@@ -201,11 +247,12 @@ class classifier_stft(nn.Module):
         self.name = name
         self.harmonic_downsample = class_para.harmonic_downsample
         self.train_harmonic = class_para.train_harmonic
-        self.combine_harm = (class_para.combine_harm if hasattr( class_para, 'combine_harm') else False)
+        self.combine_harm = (class_para.combine_harm if hasattr(
+            class_para, 'combine_harm') else False)
 
         if self.train_harmonic:
-            self.harmonic_net = nn.Sequential(nn.Conv3d(self.harmonics**2, self.harmonics+1, (1,1,1)),
-                nn.LeakyReLU())
+            self.harmonic_net = nn.Sequential(nn.Conv3d(self.harmonics**2, self.harmonics + 1, (1, 1, 1)),
+                                              nn.LeakyReLU())
 
         for j in range(self.stft_count):
             current_in = 1
@@ -223,13 +270,13 @@ class classifier_stft(nn.Module):
             # print(height)
 
         current_in = 1
-        if self.total_height >1:
+        if self.total_height > 1:
             current_out = self.channels
         else:
             current_out = 0
         layers = []
         if self.height_dropout:
-            layers +=[nn.Dropout2d(self.height_dropout)]
+            layers += [nn.Dropout2d(self.height_dropout)]
 
         if self.nn_layers >= 0:
             current_out += self.channels
@@ -238,8 +285,8 @@ class classifier_stft(nn.Module):
                 ini_harm_kernel = 1
                 ini_harm_stride = 1
             else:
-                ini_harm_kernel = (self.harmonics+1)
-                ini_harm_stride = (self.harmonics+1)
+                ini_harm_kernel = (self.harmonics + 1)
+                ini_harm_stride = (self.harmonics + 1)
             layers += [nn.Conv2d(self.total_height, current_out, (self.kernel, ini_harm_kernel), stride=(
                 1, ini_harm_stride), padding=(self.kernel // 2, 0)),
             ]
@@ -281,7 +328,8 @@ class classifier_stft(nn.Module):
         if pretrain_conv:
             self.pretrain_conv()
 
-        self.fft_res = 1 / (self.input_resolution * self.min_length)
+        self.fft_res = 1 / (self.input_resolution *
+                            int(self.min_length * (1 + self.pad_factor)))
 
     def forward(self, x):
 
@@ -291,17 +339,21 @@ class classifier_stft(nn.Module):
         k = 0
         if not hasattr(self, 'train_harmonic'):
             self.train_harmonic = False
+        if not hasattr(self, 'bin_comparison'):
+            self.bin_comparison = False
         for length in self.lengths:
-            stft = compute_stft(x, length, hop_length=length, norm=self.norm, crop=int(length*self.crop_factor),
-                                harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
-                                no_adding=self.train_harmonic)
+            with autocast(enabled=False):
+                stft = compute_stft(x.float(), length, hop_length=length, norm=self.norm, crop=int(length * self.crop_factor),
+                                    harmonics=self.harmonics, harmonic_downsample=self.harmonic_downsample,
+                                    no_adding=self.train_harmonic, pad_factor=self.pad_factor, bin_comparison=self.bin_comparison)
             # if len(stft.shape)==4:
             #     stft = stft.unsqueeze(1)
             if self.train_harmonic:
                 # print(stft.shape, 'before')
-                stft = self.harmonic_net(stft.transpose(1,4)).transpose(1,4)
+                stft = self.harmonic_net(stft.transpose(1, 4)).transpose(1, 4)
                 # print(stft.shape, 'before')
-                stft = stft.reshape(stft.shape[0],stft.shape[1],stft.shape[2], stft.shape[3]*stft.shape[4])
+                stft = stft.reshape(
+                    stft.shape[0], stft.shape[1], stft.shape[2], stft.shape[3] * stft.shape[4])
                 # print(stft.shape, 'after')
 
             # else:
@@ -335,12 +387,37 @@ class classifier_stft(nn.Module):
 
         #out_conv = self.conv(stft.unsqueeze(1))
 
+        # Normalise the output based on the standard deviation and median
+        if not hasattr(self, 'norm_significance'):
+            self.norm_significance = False
+
+        if self.norm_significance:
+            out_conv = (out_conv - out_conv.median(dim=2, keepdim=True)
+                        [0]) / out_conv.std(dim=2, keepdim=True)
+
         reduce_edges = 1
         if reduce_edges:
-            out_conv[:,:,:50,:] = -100
-            out_conv[:,:,-50:,:] = -100
+            out_conv[:, :, :50, :] = -100
+            out_conv[:, :, -50:, :] = -100
 
-        out_pool, max_pos = self.glob_pool(out_conv)
+        #out_pool, max_pos = self.glob_pool(out_conv)
+        if self.channel_classification:
+            pool_target = [1, x.shape[1]]
+        else:
+            pool_target = [1, 1]
+
+        # out_pool, max_pos = self.glob_pool(out_conv)
+        # print(out_pool.shape, max_pos.shape)
+        out_pool, max_pos = F.adaptive_max_pool2d(out_conv,
+                                                  output_size=pool_target, return_indices=True)
+
+        # print(out_pool)
+        out_pool = out_pool.reshape(
+            out_pool.shape[0] * pool_target[-1], out_pool.shape[1], 1, 1)
+        # print(out_pool)
+        max_pos = max_pos.reshape(
+            max_pos.shape[0] * max_pos.shape[-1], max_pos.shape[1], 1, 1)
+        # print(max_pos, self.channel_classification)
 
         max_pos = max_pos[:, :1, 0, 0].float()
 
@@ -365,15 +442,21 @@ class classifier_stft(nn.Module):
 
         output = self.final(out_pool_final)
 
-        output_period = 1 / (max_pos_freq * harm_correction * self.fft_res + 0.0000001)
+        output_period = 1 / \
+            (max_pos_freq * harm_correction * self.fft_res + 0.0000001)
+        # print(output)
         #output_freq = output_freq.clamp(0, 5)
         #output_freq = torch.ones((x.shape[0], 1)).to(x.device)
         output = torch.cat((output, output_period), dim=1)
-        # print(output_freq)
 
-        periods = torch.arange(out_conv.shape[2], dtype=torch.float).to(out_conv.device)
+        #output = output.reshape(x.shape[0], 3, pool_target[-1])
+        output = output.reshape(x.shape[0], pool_target[-1],3).transpose(1,2)
+        # print('after reshape in class', output[:,:2,:])
+
+        periods = torch.arange(
+            out_conv.shape[2], dtype=torch.float).to(out_conv.device)
         periods[0] = 0.001
-        periods = 1/(periods*self.fft_res)
+        periods = 1 / (periods * self.fft_res)
 
         self.channel_correction = None
         # self.channel_correction = torch.zeros(out_conv.shape[3]).to(x.device)
@@ -386,6 +469,7 @@ class classifier_stft(nn.Module):
         #             correction = 2 **j
         #         self.channel_correction[current_channel] = correction
         # print(self.channel_correction)
+        # print(output.shape, out_conv.shape, periods.shape)
 
         return output, (out_conv, periods)
 
@@ -399,7 +483,9 @@ class classifier_stft(nn.Module):
 
         final_para = torch.nn.Parameter(torch.Tensor([[-weight], [weight]]))
         self.final[0].weight = final_para
-        self.final_cands[0].weight = final_para
+        final_para_cands = torch.nn.Parameter(
+            torch.Tensor([[-weight], [weight]]))
+        self.final_cands[0].weight = final_para_cands
         # self.final[0].weight[0,:] = - weight
         # self.final[0].weight[1,:] = + weight
 

@@ -147,6 +147,11 @@ class logger():
                     else:
                         mcc_string = "{:.2f}".format(mcc)+ ' |'
                     conf_string_split += ' ' + mcc_string + ''
+        else:
+            self.last_val_mcc = np.nan
+            self.last_train_mcc = np.nan
+            self.last_train_mcc_sim = np.nan
+            self.last_valid_mcc_sim = np.nan
         if loss_test is None:
             if epoch==0:
                 print(f"Epoch Count | Loss Rate  | Total Loss         Split Loss:|Train (class&MSE)||Valid(class&MSE) | MCC   Train  Valid      Train(Sim   Real) Valid(Sim   Real)")
@@ -316,24 +321,24 @@ class logger():
             cand_array = np.asarray(self.cand_stack)
 
             #Only use candidates with real pulsars and do not not look at candidates created with psr_cands
-            cand_array_filtered = cand_array[(cand_array[:,11]==3)&(cand_array[:,5]!=3)]
+            cand_array_filtered = cand_array[(cand_array[:,13]==3)&(cand_array[:,6]!=6)]
 
-            # print(cand_array_filtered.shape)
 
-            files = np.unique(cand_array_filtered[:,6])
+            files = np.unique(cand_array_filtered[:,7])
             num_files = len(files)
+
             if not num_files==0:
 
                 good_cands = 0
                 all_cands = 0
                 for file in files:
-                    cands_trunc = cand_array_filtered[cand_array_filtered[:,6]==file]
+                    cands_trunc = cand_array_filtered[cand_array_filtered[:,7]==file]
                     # print(cands_trunc)
                     # All candidates where the target is supposedly the pulsar
-                    psr_cands = cands_trunc[cands_trunc[:,5]==1]
+                    psr_cands = cands_trunc[cands_trunc[:,6]==1]
 
                     # print(psr_cands)
-                    cands = np.sum(psr_cands[:,5]==1)
+                    cands = np.sum(psr_cands[:,6]==1)
                     if cands != 0:
                         all_cands += 1
 

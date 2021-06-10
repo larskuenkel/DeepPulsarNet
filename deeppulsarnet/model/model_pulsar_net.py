@@ -32,8 +32,8 @@ class pulsar_net(nn.Module):
                  gauss=(27, 15 / 4, 1, 1),
                  cmask=False, rfimask=False,
                  dm0_class=False, class_configs=[''], data_resolution=1, crop=0,
-                 edge=[0, 0], class_weight=[1, 1], added_cands=0, psr_cands=False,
-                 cands_threshold=0):
+                 edge=[0, 0], class_weight=[1, 1], added_cands=0, psr_cands=False, added_channel_cands=0,
+                 cands_threshold=0, channel_classification=False):
         super().__init__()
 
         print('Creating neural net.')
@@ -64,12 +64,16 @@ class pulsar_net(nn.Module):
         self.output_resolution = data_resolution * self.down_fac
 
         self.added_cands = added_cands
+        self.added_channel_cands = added_channel_cands
         self.psr_cands = psr_cands
         self.cands_threshold = 0
 
-        self.candidate_creator = candidate_creator(added_cands=self.added_cands, psr_cands=self.psr_cands,
-                                                       candidate_threshold=self.cands_threshold)
-        if self.added_cands or self.psr_cands:
+        # self.channel_classification = channel_classification
+
+        self.candidate_creator = candidate_creator(added_cands=self.added_cands, added_channel_cands=self.added_channel_cands,
+                                                   psr_cands=self.psr_cands,
+                                                   candidate_threshold=self.cands_threshold, output_chan=self.output_chan)
+        if self.added_cands or self.psr_cands or self.added_channel_cands:
             self.cand_based = True
         else:
             self.cand_based = False
@@ -88,7 +92,10 @@ class pulsar_net(nn.Module):
         if model_para.tcn_2_layers:
             self.use_tcn = 1
             self.tcn = TemporalConvNet_multi(model_para.tcn_2_channels, model_para.tcn_2_channels_increase,
-                                             model_para.tcn_2_layers, model_para.tcn_2_groups, dilation=model_para.tcn_2_dilation,
+                                             model_para.tcn_2_layers, norm_groups=model_para.tcn_2_norm_groups,
+                                             conv_groups=model_para.tcn_2_conv_groups,
+                                             kernel_size=model_para.tcn_2_kernel,
+                                             dilation=model_para.tcn_2_dilation,
                                              levels=model_para.tcn_2_downsample_levels,
                                              downsample_factor=model_para.tcn_2_downsample_factor)
             dec_input = self.tcn.output_chan
@@ -106,7 +113,7 @@ class pulsar_net(nn.Module):
             output_channels=self.output_chan)
 
         self.create_classifier_levels(
-            class_configs, no_reg, dm0_class=dm0_class)
+            class_configs, no_reg, dm0_class=dm0_class, channel_classification=channel_classification)
 
         self.create_loss_func(class_weight)
 
@@ -125,12 +132,17 @@ class pulsar_net(nn.Module):
 
         # self.crop = self.tcn.biggest_pad
 
-    def create_classifier_levels(self, class_configs, no_reg=True, overwrite=True, dm0_class=False):
+    def create_classifier_levels(self, class_configs, no_reg=True, overwrite=True, dm0_class=False, channel_classification=False):
         self.dm0_class = dm0_class
         # if hasattr(self, 'classifiers'):
         #     for classifier in self.classifiers:
         #         print(classifier)
         #         del classifier
+        self.channel_classification = channel_classification
+        if self.channel_classification:
+            self.class_channel_output = self.output_chan
+        else:
+            self.class_channel_output = 1
         if overwrite:
             if hasattr(self, 'classifiers'):
                 del self.classifiers
@@ -145,6 +157,7 @@ class pulsar_net(nn.Module):
                         pass
 
             self.classifiers = []
+            self.classifier_names = []
             added = ''
         else:
             added = '_1'
@@ -179,9 +192,10 @@ class pulsar_net(nn.Module):
                                                          min_period=class_para.min_period, max_period=class_para.max_period, bins_min=class_para.bins_min,
                                                          bins_max=class_para.bins_max,
                                                          remove_threshold=class_para.remove_dynamic_threshold,
-                                                         name=f"classifier_ffa{added}"))
+                                                         name=f"classifier_ffa{added}",
+                                                    ))
                 self.classifiers.append(
-                    getattr(self, "classifier_ffa%s" % added))
+                    getattr(self, class_name))
 
             # if 'stft_comb' in self.class_mode:
             if class_para.class_type == 'stft':
@@ -190,9 +204,10 @@ class pulsar_net(nn.Module):
                     class_name += '_'
                 setattr(self, class_name, classifier_stft(self.out_length, self.output_resolution, class_para,
                                                           dm0_class=dm0_class,
-                                                          name=class_name))
+                                                          name=class_name, channel_classification=channel_classification))
                 self.classifiers.append(
-                    getattr(self, f"classifier_{class_para.name}"))
+                    getattr(self, class_name))
+            self.classifier_names.append(class_name)
         # else:
         #     self.classifier = None
 
@@ -203,6 +218,18 @@ class pulsar_net(nn.Module):
             self.multi_class = MultiClass(self.used_classifiers, self.no_reg)
         else:
             self.use_multi_class = 0
+
+        for clas in self.classifiers:
+            clas.channel_classification = channel_classification
+
+        # turn of channel classification when ffa classifier is used
+        if any("ffa" in clas_name for clas_name in self.classifier_names):
+            print('No channel classification is used due to inclusion of FFA classifier.')
+            for clas in self.classifiers:
+                clas.channel_classification = False
+
+            self.channel_classification = False
+            self.class_channel_output = 1
 
     def forward(self, x, target=None):
         # y = x - tile(self.pool(x)[:,:,:], 2, 1000)
@@ -272,12 +299,12 @@ class pulsar_net(nn.Module):
             encoded = encoded[:, :, self.crop:-self.crop].contiguous()
 
         class_tensor = torch.zeros(
-            (input.shape[0], self.used_classifiers, self.final_output)).to(input.device)
+            (input.shape[0], self.used_classifiers, self.final_output, self.class_channel_output)).to(input.device)
         # switch = 0
         j = 0
         encoded = self.output_layer(encoded)
         if self.mode == 'dedisperse':
-            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True)
+            return encoded, torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True), (torch.empty(0, requires_grad=True), torch.empty(0, requires_grad=True))
 
         if hasattr(self, 'break_grad'):
             if self.break_grad:
@@ -290,9 +317,10 @@ class pulsar_net(nn.Module):
         if hasattr(self, 'dm0_class'):
             if self.dm0_class:
                 encoded_ = self.append_dm0(input, encoded_)
+
+        # print(class_tensor.shape)
         for classifier in self.classifiers:
-            # print(class_tensor.shape)
-            class_tensor[:, j, :], class_data = classifier(encoded_)
+            class_tensor[:, j, :,:], class_data = classifier(encoded_)
             if self.cand_based:
                 if hasattr(classifier, 'final_cands'):
                     final_layer = classifier.final_cands
@@ -315,7 +343,7 @@ class pulsar_net(nn.Module):
             classifier_output_multi = self.multi_class(
                 class_tensor)
             return encoded, classifier_output_multi, class_tensor, (candidates, cand_targets)
-        return encoded, class_tensor[:, 0, :], torch.empty(0, requires_grad=True), (candidates, cand_targets)
+        return encoded, class_tensor[:, 0, :,:], torch.empty(0, requires_grad=True), (candidates, cand_targets)
 
     # def apply_classifier(self, input):
     #     class_tensor = torch.zeros(
@@ -433,8 +461,16 @@ class pulsar_net(nn.Module):
         #print(smoothed.shape, tensor.shape)
         # out_tensor = torch.cat((
         #     smoothed, tensor[:, 1:, :]), dim=1)
-        # plt.plot(tensor[0,0,:].detach().cpu().numpy())
-        # plt.plot(smoothed[0,0,:].detach().cpu().numpy())
+        # import matplotlib
+        # print(tensor.shape, smoothed.shape)
+        # matplotlib.use('Agg')
+        # plt.plot(tensor[0,0,:200].detach().cpu().numpy())
+        # plt.plot(smoothed[0,0,0,:200].detach().cpu().numpy()+0.1)
+        # plt.plot(tensor[0,1,:200].detach().cpu().numpy()+0.2)
+        # plt.plot(smoothed[0,0,1,:200].detach().cpu().numpy()+0.3)
+        # import time
+        # plt.savefig(f"./test/{time.time()}.png")
+        # plt.close()
         # plt.show()
         return smoothed[:, 0, :, :]
 

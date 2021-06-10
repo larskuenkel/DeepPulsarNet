@@ -17,14 +17,15 @@ class Post_2d(nn.Module):
 
 
 class TemporalConvNet_single(nn.Module):
-    def __init__(self, num_inputs, channels_added, blocks, groups, kernel_size=2, acausal=1,
+    def __init__(self, num_inputs, channels_added, blocks, norm_groups=4, conv_groups=1, kernel_size=2, acausal=1,
                  tcn_dilation=2, dropout=0, residual=True):
         super().__init__()
 
         self.ini_channels = num_inputs
         self.channels_added = channels_added
         self.blocks = blocks
-        self.groups = groups
+        self.norm_groups = norm_groups
+        self.conv_groups = conv_groups
         self.dilation = tcn_dilation
         self.kernel_size = kernel_size
 
@@ -37,9 +38,9 @@ class TemporalConvNet_single(nn.Module):
         current_input = self.ini_channels
         for i in range(self.blocks):
             dilation_size = self.dilation ** i
-            current_output = current_input + channels_added if i > 0 else num_inputs
+            current_output = current_input + channels_added# if i > 0 else num_inputs
             layers += [TemporalBlock(current_input, current_output, self.kernel_1d, stride=1, dilation=dilation_size,
-                                     groups=groups, acausal=acausal, dropout=dropout, residual=residual)]
+                                     norm_groups=norm_groups, conv_groups=conv_groups, acausal=acausal, dropout=dropout, residual=residual)]
             current_input = current_output
 
         self.network = nn.Sequential(*layers)
@@ -50,7 +51,7 @@ class TemporalConvNet_single(nn.Module):
 
 
 class TemporalConvNet_multi(nn.Module):
-    def __init__(self, num_inputs, tcn_channels_added, tcn_layers, groups, kernel_size=5, dropout=0, acausal=1,
+    def __init__(self, num_inputs, tcn_channels_added, tcn_layers, norm_groups=4, conv_groups=1, kernel_size=5, dropout=0, acausal=1,
                  dilation=5, stride=1, pool=1,
                  block_mode='cat',  levels=1, downsample_factor=4):
         super().__init__()
@@ -58,7 +59,8 @@ class TemporalConvNet_multi(nn.Module):
         self.ini_channels = num_inputs
         self.channels_added = tcn_channels_added
         self.blocks = tcn_layers
-        self.groups = groups
+        self.norm_groups = norm_groups
+        self.conv_groups = conv_groups
         self.dilation = dilation
         self.kernel_1d = kernel_size
         self.levels = levels
@@ -73,7 +75,7 @@ class TemporalConvNet_multi(nn.Module):
             self.complete_channels = self.output_chan_block
 
         for i in range(self.levels):
-            setattr(self, "tb%d" % i, TemporalConvNet_single(num_inputs, self.channels_added, self.blocks, groups,
+            setattr(self, "tb%d" % i, TemporalConvNet_single(num_inputs, self.channels_added, self.blocks, norm_groups=norm_groups, conv_groups=conv_groups,
                                                              kernel_size=self.kernel_1d, tcn_dilation=dilation, dropout=dropout))
 
             if i > 0:
