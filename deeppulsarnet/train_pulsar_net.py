@@ -33,7 +33,7 @@ def main():
     parser.add_argument('--model_parameter', type=str, action='append',
                         help='Change parameters of the model. Usage: --model_parameter "tcn_1_layer 4, encoder_conv_groups 2".\
                         Separate multiple parameters with a comma and use the quotation marks.')
-    parser.add_argument('--class_configs', type=str, default=['class_stft.json'], nargs='+',
+    parser.add_argument('--class_configs', type=str, default=['default_class_fft.json'], nargs='+',
                         help='Name of the config files containing the hyperparameters of the classifiers in the model_configs folder.\
                         --class_configs class_1.json class_2.json')
     parser.add_argument('-l', type=float, nargs='+',
