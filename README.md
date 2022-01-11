@@ -25,3 +25,13 @@ The parameters of the network can currently be changed by modifying the .json co
 
 \*Original data:
 Lyne, A; Manchester, R; Camilo, F; Bell, J; Sheppard, D; D'Amico, N; Kaspi, V (2012): Parkes observations for project P268 semester 1997AUGT. v3. CSIRO. Data Collection. https://doi.org/10.4225/08/583746ac2c4de
+
+
+# Tutorial
+
+
+* Tutorial currently broken because of seg fault when using sigproc. Further tests required
+* Build the docker image `docker build -t larskuenkel/deeppulsarnet:latest .`
+* Run the docker `docker run --rm -it  larskuenkel/deeppulsarnet:latest`
+* `cd DeepPulsarNetTutorial`
+* `python 1_create_simulations.py`

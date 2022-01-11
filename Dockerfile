@@ -42,6 +42,7 @@ RUN apt-get install --no-install-recommends -y \
     tcsh \
     unzip \
     sudo \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 RUN apt-get clean
 
@@ -58,6 +59,7 @@ COPY . .
 RUN pip3 install --no-cache-dir --upgrade wheel pip
 RUN pip3 install --no-cache-dir -r requirements.txt
 
+ADD . /home/DeepPulsarNet
 
 RUN mkdir -p /home/soft
 ENV HOME=/home
@@ -69,12 +71,23 @@ ENV OSTYPE=linux
 WORKDIR /home/soft
 
 #copy respositories
+
 RUN git clone https://github.com/larskuenkel/SKA-TestVectorGenerationPipeline.git
 RUN unzip -n -q SKA-TestVectorGenerationPipeline/ASC/ASC.zip \ 
     -d SKA-TestVectorGenerationPipeline/ASC/all_ASC
 
+#RUN git clone https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline && \ 
+#    cd SKA-TestVectorGenerationPipeline && \
+#    git checkout v2.0
+#RUN unzip -n -q SKA-TestVectorGenerationPipeline/resources/ASC/ASC.zip \ 
+#    -d SKA-TestVectorGenerationPipeline/resources/ASC/all_ASC
+
+#ENV PATH="/home/soft/SKA-TestVectorGenerationPipeline/code/pulsar_injection_pipeline/v1.0/src:${PATH}"
+
 #currently no presto installation since tests fail
 #RUN git clone https://github.com/scottransom/presto.git
+
+WORKDIR /home/soft
 
 
 ## Install presto python scripts
@@ -111,6 +124,16 @@ RUN git clone https://github.com/nanograv/tempo.git && \
     make && \
     make install
 ENV TEMPO /home/soft/tempo
+
+# Install tempo2
+RUN sudo git clone https://bitbucket.org/psrsoft/tempo2.git && cd tempo2 && \
+    sudo ./bootstrap && \
+    sudo cp -r T2runtime ${PSRHOME}/tempo2/share/
+ENV TEMPO2="${PSRHOME}/tempo2/share/"
+RUN cd ${PSRHOME}/tempo2 && sudo TEMPO2=${TEMPO2} ./configure --prefix=/usr/local && sudo make && sudo make install && \
+    sudo make plugins && sudo make plugins-install && sudo make clean && sudo make distclean
+ENV LD_LIBRARY_PATH=/usr/local/lib/:${LD_LIBRARY_PATH}
+
  
 ## Install presto
 #WORKDIR /home/soft/presto/src
@@ -135,7 +158,7 @@ WORKDIR /home/soft/
 RUN git clone https://github.com/SixByNine/sigproc.git
 WORKDIR $SIGPROC
 RUN ./bootstrap && \
-    ./configure --prefix=$SIGPROC/install && \
+    ./configure --prefix=$SIGPROC/install LDFLAGS="-L/usr/local/lib/" LIBS="-ltempo2" && \
     make && \
     make install
 
