@@ -7,15 +7,10 @@ This Python 3 program allows searching for pulsars in filterbank files using neu
 * Install a for your system fitting version of [PyTorch](http://github.com) (Tested on 1.6.0)
 * Run 'pip install -r requirements.txt'
 
-For the data preparation and simulation we additionally require:
-* [Tempo2](https://bitbucket.org/psrsoft/tempo2/)
-* [sigproc](https://github.com/SixByNine/sigproc) with the binaries linked in your PATH
-* The [SKA-TestVectorGenerationPipeline](https://github.com/larskuenkel/SKA-TestVectorGenerationPipeline) ('git clone https://github.com/larskuenkel/SKA-TestVectorGenerationPipeline') This version uses v1.0 of the pipeline but is usable in Python 3
-
 
 # Basic Workflow
 
-* Grab pulsar survey data. One example set of the Parkes Multibeam Survey which already has been sufficiently downsampled can be found [here](https://uni-bielefeld.sciebo.de/s/FPBaOw3Q1rs15BL)\*
+* Grab pulsar survey data. One example set of the Parkes Multibeam Survey which already has been sufficiently downsampled can be found [here](https://uni-bielefeld.sciebo.de/s/LoENwCQgzV8VFMg)\*
 * Create a training and noise set using 'create_training_set.ipynb' and 'prepare_noise_set.ipynb' included in ./deeppulsarnet/notebooks
 * Train a neural network using 'train_pulsar_net.py'
 	* Example command: python train_pulsar_net.py --path simset_training_set_1_noise.csv --path_noise noiseset_noise_sample.csv --name test_model --length 100000
@@ -29,9 +24,14 @@ Lyne, A; Manchester, R; Camilo, F; Bell, J; Sheppard, D; D'Amico, N; Kaspi, V (2
 
 # Tutorial
 
+* `cd tutorial`
+* Download [the PMPS example files](https://uni-bielefeld.sciebo.de/s/LoENwCQgzV8VFMg) to the tutorial folder
 
-* Tutorial currently broken because of seg fault when using sigproc. Further tests required
-* Build the docker image `docker build -t larskuenkel/deeppulsarnet:latest .`
-* Run the docker `docker run --rm -it  larskuenkel/deeppulsarnet:latest`
-* `cd DeepPulsarNetTutorial`
+* `tar -xvf pmps_obs_sample_v2.tar.gz`
+* `python 0_create_pmps_dataset.py`
 * `python 1_create_simulations.py`
+* `python 2_create_targets.py`
+* `python 3_train_network.py`
+* The parameters for the training or the parameters of the simulation set can be changed to increase performance.
+* `python 4_train_network.py`
+* If the Pulsar Prediction value is above 0.5 the network thinks that there is a real pulsar in the data. Half of the test samples contains known pulsars.

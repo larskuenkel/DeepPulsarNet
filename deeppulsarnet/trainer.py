@@ -435,22 +435,22 @@ class trainer():
             # self.logger.plot_regressor(self.mode)
             # self.logger.plot_estimate(self.mode, self.no_reg)
             pass
-        if self.mode == 'validation' and self.net.epoch % 1 == 0 and not self.net.mode == 'short':
-            in_array = ten_x.detach().cpu().numpy()  # .squeeze()
-            # if self.binary:
-            #     out_array = torch.sigmoid(
-            #         output_image.detach()).cpu().numpy().squeeze()
-            # else:
-            # output_image = torch.sigmoid(output_image)#self.net.gauss_smooth(output_image)
-            ten_y = self.net.gauss_smooth(ten_y)
-            # ten_y = self.net.classifier_fft.compute_fft(
-            #     ten_y).unsqueeze(1).detach()[:, 0, :]
-            # output_image = self.net.classifier_fft.compute_fft(
-            #     output_image).unsqueeze(1).detach()[:, 0, :]
-            out_array = output_image.detach().cpu().numpy()
-            target_array = ten_y.cpu().numpy()
-            self.logger.plot_dedisperse(
-                in_array, out_array, target_array, ten_y2)
+        # if self.mode == 'validation' and self.net.epoch % 1 == 0 and not self.net.mode == 'short':
+        #     in_array = ten_x.detach().cpu().numpy()  # .squeeze()
+        #     # if self.binary:
+        #     #     out_array = torch.sigmoid(
+        #     #         output_image.detach()).cpu().numpy().squeeze()
+        #     # else:
+        #     # output_image = torch.sigmoid(output_image)#self.net.gauss_smooth(output_image)
+        #     ten_y = self.net.gauss_smooth(ten_y)
+        #     # ten_y = self.net.classifier_fft.compute_fft(
+        #     #     ten_y).unsqueeze(1).detach()[:, 0, :]
+        #     # output_image = self.net.classifier_fft.compute_fft(
+        #     #     output_image).unsqueeze(1).detach()[:, 0, :]
+        #     out_array = output_image.detach().cpu().numpy()
+        #     target_array = ten_y.cpu().numpy()
+            # self.logger.plot_dedisperse(
+            #     in_array, out_array, target_array, ten_y2)
 
     def test_target_file(self, file, noise, noise_file='/media/lkuenkel/Uni/data/palfa/new_processed_2/p2030_53831_43886_0165_G65.12-00.39.C_0.decim.fil', start_val=2000,
                          verbose=0, nulling=(0, 0, 0, 0, 0, 0, 0, 0)):
@@ -512,9 +512,11 @@ class trainer():
         output_im = output_im[:, :target_im.shape[1], :]
         output_im_smooth = output_im  # self.net.gauss_smooth(output_im)
         #periods = self.estimate_period(output_im_smooth[:, :1, :])
-        # print(output_clas)
+        # print(output_clas, target_clas)
 
         # print(output_clas.shape, single_class.shape, target_clas.shape)
+
+        # First calculate classification loss
         if output_clas.shape[2]==1:
             output_clas = output_clas[:,:,0]
             if len(single_class) != 0 and self.train_single and not self.mode == 'test':
@@ -551,6 +553,7 @@ class trainer():
             periods = torch.zeros((output_im.shape[0],1)).to(output_im.device)
 
 
+        # Calculation of MSE loss which recreates pulses
         if not self.mode == 'test' and not self.net.mode == 'classifier' and not self.net.mode == 'short':
 
             #non_nan_batches = target_im[:,0,0] == target_im[:,0,0]

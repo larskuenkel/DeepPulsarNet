@@ -1,3 +1,5 @@
+#Currently Dockerfile does not do a whole lot since the requirements changed
+
 # PyTorch Base Image
 FROM pytorch/pytorch:1.10.0-cuda11.3-cudnn8-runtime
 
@@ -66,23 +68,16 @@ ENV HOME=/home
 ENV PSRHOME=/home/soft
 ENV OSTYPE=linux
 
-
+#WORKDIR /home/
+#RUN mkdir data
+#RUN wget https://github.com/larskuenkel/SKA-TestVectorGenerationPipeline/raw/master/ASC/ASC.zip
+#RUN unzip -n -q ASC.zip \ 
+#    -d data/all_asc/ && \
+#    rm ASC.zip
 # Installs all the C dependancies -----------------------------
 WORKDIR /home/soft
 
 #copy respositories
-
-RUN git clone https://github.com/larskuenkel/SKA-TestVectorGenerationPipeline.git
-RUN unzip -n -q SKA-TestVectorGenerationPipeline/ASC/ASC.zip \ 
-    -d SKA-TestVectorGenerationPipeline/ASC/all_ASC
-
-#RUN git clone https://github.com/scienceguyrob/SKA-TestVectorGenerationPipeline && \ 
-#    cd SKA-TestVectorGenerationPipeline && \
-#    git checkout v2.0
-#RUN unzip -n -q SKA-TestVectorGenerationPipeline/resources/ASC/ASC.zip \ 
-#    -d SKA-TestVectorGenerationPipeline/resources/ASC/all_ASC
-
-#ENV PATH="/home/soft/SKA-TestVectorGenerationPipeline/code/pulsar_injection_pipeline/v1.0/src:${PATH}"
 
 #currently no presto installation since tests fail
 #RUN git clone https://github.com/scottransom/presto.git
@@ -117,49 +112,22 @@ RUN wget https://www.atnf.csiro.au/research/pulsar/psrcat/downloads/psrcat_pkg.t
 ENV PSRCAT_FILE /home/soft/psrcat_tar/psrcat.db
     
 # Install tempo
-RUN git clone https://github.com/nanograv/tempo.git && \
-    cd tempo && \
-    ./prepare && \
-    ./configure && \
-    make && \
-    make install
-ENV TEMPO /home/soft/tempo
+#RUN git clone https://github.com/nanograv/tempo.git && \
+#    cd tempo && \
+#    ./prepare && \
+#    ./configure && \
+#    make && \
+#    make install
+#ENV TEMPO /home/soft/tempo
 
 # Install tempo2
-RUN sudo git clone https://bitbucket.org/psrsoft/tempo2.git && cd tempo2 && \
-    sudo ./bootstrap && \
-    sudo cp -r T2runtime ${PSRHOME}/tempo2/share/
-ENV TEMPO2="${PSRHOME}/tempo2/share/"
-RUN cd ${PSRHOME}/tempo2 && sudo TEMPO2=${TEMPO2} ./configure --prefix=/usr/local && sudo make && sudo make install && \
-    sudo make plugins && sudo make plugins-install && sudo make clean && sudo make distclean
-ENV LD_LIBRARY_PATH=/usr/local/lib/:${LD_LIBRARY_PATH}
+#RUN sudo git clone https://bitbucket.org/psrsoft/tempo2.git && cd tempo2 && \
+#    sudo ./bootstrap && \
+#    sudo cp -r T2runtime ${PSRHOME}/tempo2/share/
+#ENV TEMPO2="${PSRHOME}/tempo2/share/"
+#RUN cd ${PSRHOME}/tempo2 && sudo TEMPO2=${TEMPO2} ./configure --prefix=/usr/local && sudo make && sudo make install && \
+#    sudo make plugins && sudo make plugins-install && sudo make clean && sudo make distclean
+#ENV LD_LIBRARY_PATH=/usr/local/lib/:${LD_LIBRARY_PATH}
 
- 
-## Install presto
-#WORKDIR /home/soft/presto/src
-#RUN make makewisdom && \
-#    make prep && \
-#    make -j 1 && \
-#    make clean
-#ENV PATH="/home/soft/presto/bin/:${PATH}"
-
-
-# SIGPROC
-# These flags assist with the Sigproc compilation process, so do not remove them. If you take
-# them out, then Sigproc will not build correctly.
-ENV SIGPROC=$PSRHOME/sigproc
-ENV PATH=$PATH:$SIGPROC/install/bin
-ENV FC=gfortran
-ENV F77=gfortran
-ENV CC=gcc
-ENV CXX=g++
-
-WORKDIR /home/soft/
-RUN git clone https://github.com/SixByNine/sigproc.git
-WORKDIR $SIGPROC
-RUN ./bootstrap && \
-    ./configure --prefix=$SIGPROC/install LDFLAGS="-L/usr/local/lib/" LIBS="-ltempo2" && \
-    make && \
-    make install
 
 WORKDIR /home/

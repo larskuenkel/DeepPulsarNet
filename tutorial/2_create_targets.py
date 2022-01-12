@@ -3,12 +3,16 @@ import scipy.signal
 import matplotlib.pyplot as plt
 from sigpyproc.Readers import FilReader as reader
 import pandas as pd
+import glob
+import os
 
-data_folder = '/home/DeepPulsarNet/tutorial/fake_data/data/'
+data_folder=os.getcwd()+ '/tutorial_data/'
 set_name = 'tutorial_pmps'
-created_files = glob.glob(f'{data_path}/*')
+data_path = f'{data_folder}data/'
+created_files = glob.glob(f'{data_path}/*.fil')
+print(f'{len(created_files)} files found')
 
-out_folder = f'{set_path}/data_peaks/'
+out_folder = f'{data_path}/data_peaks/'
 
 os.system(f'rm -r {out_folder}')
 os.system(f'mkdir {out_folder}')
@@ -48,7 +52,8 @@ for file in created_files[:]:
         dm_delays = fil.header.getDMdelays(dm)
         middle_delay = dm_delays[len(dm_delays)//2]
         peaks += middle_delay
-        if max(peaks) > 
+        if max(peaks) > len(down):
+            peaks = peaks[:-1]
     y_val = np.ones_like(peaks[:3]) 
 
     dummy = np.zeros_like(down).astype(bool)
@@ -73,7 +78,7 @@ for file in created_files[:]:
     np.save(full_path, dummy)
 
 approx_arr = np.asarray(approx)
-np.save(f'{set_path}/approx_periods_{down_fac}.npy', approx_arr)
+np.save(f'{data_folder}/approx_periods.npy', approx_arr)
 plt.scatter(approx_arr[:,0], approx_arr[:,1])
 plt.savefig('approximated_periods.png')
 print('Number of good files:', len(correct_files))
@@ -87,7 +92,7 @@ periods = [float(i.split('_')[2]) for i in raw_file_names]
 duty_cycles = [float(i.split('_')[3]) for i in raw_file_names]
 dms = [float(i.split('_')[3]) for i in raw_file_names]
 snrs = [float(i.split('_')[4]) for i in raw_file_names]
-print(len(snrs), len(max_dedis_vals))
+#print(len(snrs), len(max_dedis_vals))
 
 data_dict = {'JNAME':psr_names, 'P0':periods, 'DM':dms, 'Label':np.ones_like(psr_names), 'FileName':raw_file_paths, 
              'SNR': snrs, 'MaskName': dedis_names, 'MaxVal': max_dedis_vals, 'DutyCycle': duty_cycles}
@@ -101,6 +106,8 @@ df_noise = df.copy()
 for i in range(len(df)):
     df_noise = df_noise.append(dummy_line, ignore_index=True)
 
-os.system(f'mkdir ,,/deepulsarnet/datasets/')
-df.to_csv(f'../datasets/simset_{set_name}.csv')
-df_noise.to_csv(f'../datasets/simset_{set_name}_noise.csv')
+os.system(f'mkdir ../deeppulsarnet/datasets/')
+df.to_csv(f'../deeppulsarnet/datasets/simset_{set_name}.csv')
+df_noise.to_csv(f'../deeppulsarnet/datasets/simset_{set_name}_noise.csv')
+print(f'../deeppulsarnet/datasets/simset_{set_name}.csv created.')
+print(f'../deeppulsarnet/datasets/simset_{set_name}_noise.csv created.')
