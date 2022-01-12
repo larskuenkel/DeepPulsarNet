@@ -33,5 +33,5 @@ Lyne, A; Manchester, R; Camilo, F; Bell, J; Sheppard, D; D'Amico, N; Kaspi, V (2
 * `python 2_create_targets.py`
 * `python 3_train_network.py`
 * The parameters for the training or the parameters of the simulation set can be changed to increase performance.
-* `python 4_train_network.py`
+* `bash 4_test_network.sh`
 * If the Pulsar Prediction value is above 0.5 the network thinks that there is a real pulsar in the data. Half of the test samples contains known pulsars.
