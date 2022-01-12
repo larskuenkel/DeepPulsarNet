@@ -94,8 +94,8 @@ You gave {len(self.manual_dmsplit)} arguments. You need to give {2 * self.net_ou
             labels, name = grab_labels(self.df.iloc[idx], index=idx)
             sim_file = self.df.iloc[idx]['FileName']
             if len(self.noise_df)>1:
-                noise_file_index = torch.randint(0,len(self.psr_sim),(1,))
-                noise_row = self.psr_sim.iloc[noise_file_index]
+                noise_file_index = torch.randint(0,len(self.noise_df),(1,))
+                noise_row = self.noise_df.iloc[noise_file_index]
                 # noise_file_index = self.noise_df.sample().index
                 # noise_row = self.noise_df.loc[noise_file_index]
                 labels = np.append(labels, noise_row['Unnamed: 0'])
