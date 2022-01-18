@@ -6,4 +6,5 @@ scipy
 visdom
 pycm
 riptide-ffa
-sigpyproc @ git+https://github.com/telegraphic/sigpyproc@8f3f05335caeb386c9d6d32db97135145b96ab81#egg=sigpyproc
+sigpyproc @ git+https://github.com/telegraphic/sigpyproc.git
+filtools @ git+https://bitbucket.org/mkeith/filtools.git

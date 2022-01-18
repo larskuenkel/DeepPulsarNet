@@ -89,6 +89,7 @@ You gave {len(self.manual_dmsplit)} arguments. You need to give {2 * self.net_ou
         else:
             self.use_precomputed_output = 0
 
+
     def __getitem__(self, idx):
         if not self.set_based:
             labels, name = grab_labels(self.df.iloc[idx], index=idx)
@@ -225,8 +226,9 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             # if nulling[4]:
             #     data_array = spec_augment(spec=data_array, num_mask=nulling[5], freq_masking=nulling[6],
             #                               time_masking=nulling[7], value=data_array.mean())
-                # plt.imshow(data_array,aspect='auto')
-                # plt.show()
+            # plt.imshow(data_array[:,:10000],aspect='auto')
+            # plt.show()
+        # print(noise, data_array)
         enc_down = int(length / down_factor)
         if target_file != '' and not pd.isna(file):
             current_target = np.load(target_file)
@@ -245,6 +247,11 @@ def load_filterbank(file, length, mode, target_file='', noise=np.nan, noise_val=
             target_array = np.zeros((net_out, enc_down), dtype='float32')
             if labels[2] == 3 or labels[2] == 5:
                 target_array.fill(np.nan)
+        # plt.imshow(data_array[:,:10000],aspect='auto')
+        # plt.show()
+        # plt.plot(target_array[0,:10000])
+        # plt.show()
+        # print(target_array.shape)
 
         # if not 'start' in locals():
         #     start=-1
