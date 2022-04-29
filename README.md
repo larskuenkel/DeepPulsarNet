@@ -25,12 +25,11 @@ Lyne, A; Manchester, R; Camilo, F; Bell, J; Sheppard, D; D'Amico, N; Kaspi, V (2
 # Tutorial
 
 * `cd tutorial`
-* Download [the PMPS example files](https://uni-bielefeld.sciebo.de/s/LoENwCQgzV8VFMg) to the tutorial folder. You can download using this script `wget -O pmps_obs_sample_v2.tar.gz -c https://uni-bielefeld.sciebo.de/s/LoENwCQgzV8VFMg/download`
-* `tar -xvf pmps_obs_sample_v2.tar.gz`
 * `python 0_create_pmps_dataset.py`
 * `python 1_create_simulations.py`
 * `python 2_create_targets.py`
-* `bash 3_train_network.sh`
+* `python 3_download_tutorial_sample.py`
+* `bash 4_train_network.sh`
 * The parameters for the training or the parameters of the simulation set can be changed to increase performance.
-* `bash 4_test_network.sh`
+* `bash 5_test_network.sh`
 * If the Pulsar Prediction value is above 0.5 the network thinks that there is a real pulsar in the data. Half of the test samples contains known pulsars.

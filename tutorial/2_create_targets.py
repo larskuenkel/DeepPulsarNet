@@ -106,7 +106,7 @@ df_noise = df.copy()
 for i in range(len(df)):
     df_noise = df_noise.append(dummy_line, ignore_index=True)
 
-os.system(f'mkdir ../deeppulsarnet/datasets/')
+
 df.to_csv(f'../deeppulsarnet/datasets/simset_{set_name}.csv')
 df_noise.to_csv(f'../deeppulsarnet/datasets/simset_{set_name}_noise.csv')
 print(f'../deeppulsarnet/datasets/simset_{set_name}.csv created.')
