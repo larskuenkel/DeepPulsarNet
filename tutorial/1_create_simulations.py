@@ -44,7 +44,7 @@ print(f'{n_files} files will be created.')
 
 #This defines the distributions of the simulated pulsars
 # Uniform distributions with start_value:intervall_length
-snr_dist = np.random.uniform(70.,70.,n_files)
+flux_dist = np.random.uniform(0.1,0.1,n_files)
 dm_dist = np.random.uniform(200.,300.,n_files)
 p0_dist = np.random.uniform(0.1,1.5,n_files)
 
@@ -56,14 +56,14 @@ data_path = f'{data_folder}data'
 
 os.mkdir(data_path)
 
-data_dict = {'snr':snr_dist, 'dm':dm_dist, 'p0':p0_dist, 'prof':used_asc}
+data_dict = {'flux':flux_dist, 'dm':dm_dist, 'p0':p0_dist, 'prof':used_asc}
 df = pd.DataFrame(data_dict)
 
 for (index, row) in df.iterrows():
     # old_name = FakePulsar_5407_1.630740_283.1_70.0_ASC_J1640+2224_1472.fil
     f0 = 1/row['p0']
-    out_name = f"{data_path}/FakePulsar_{index}_{row['p0']:.6f}_{row['dm']:.1f}_{row['snr']:.1f}_{row['prof'].split('/')[-1].split('.')[0]}.fil"
-    os.system(f"ft_inject_pulsar -o {out_name} --f0 {f0} -D {row['dm']} --rms 1 -p {row['prof']}  {zero_file}")
+    out_name = f"{data_path}/FakePulsar_{index}_{row['p0']:.6f}_{row['dm']:.1f}_{row['flux']:.2f}_{row['prof'].split('/')[-1].split('.')[0]}.fil"
+    os.system(f"ft_inject_pulsar -o {out_name} --f0 {f0} -D {row['dm']} --rms 1 -p {row['prof']} -S {row['flux']} {zero_file}")
     df.at[index, 'FileName'] = out_name
 df.to_csv(f'{data_folder}psr_para.csv')
 print('Finished')

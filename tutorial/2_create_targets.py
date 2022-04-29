@@ -91,16 +91,16 @@ psr_names = ['',]*len(raw_file_paths)
 periods = [float(i.split('_')[2]) for i in raw_file_names]
 duty_cycles = [float(i.split('_')[3]) for i in raw_file_names]
 dms = [float(i.split('_')[3]) for i in raw_file_names]
-snrs = [float(i.split('_')[4]) for i in raw_file_names]
+fluxs = [float(i.split('_')[4]) for i in raw_file_names]
 #print(len(snrs), len(max_dedis_vals))
 
 data_dict = {'JNAME':psr_names, 'P0':periods, 'DM':dms, 'Label':np.ones_like(psr_names), 'FileName':raw_file_paths, 
-             'SNR': snrs, 'MaskName': dedis_names, 'MaxVal': max_dedis_vals, 'DutyCycle': duty_cycles}
+             'Flux': fluxs, 'MaskName': dedis_names, 'MaxVal': max_dedis_vals, 'DutyCycle': duty_cycles}
 df = pd.DataFrame(data=data_dict)
 
 # Empty lines are appended, in emty lines no simulated psr is loaded
 dummy_line = {'JNAME':'Noise', 'P0':np.nan, 'DM':np.nan, 'Label':0, 'FileName':'', 
-             'SNR': np.nan, 'MaskName': '', 'MaxVal': np.nan, 'DutyCycle': np.nan}
+             'Flux': np.nan, 'MaskName': '', 'MaxVal': np.nan, 'DutyCycle': np.nan}
 
 df_noise = df.copy()
 for i in range(len(df)):
