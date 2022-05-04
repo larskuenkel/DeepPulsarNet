@@ -102,13 +102,13 @@ def load_csv(csv_file, samples, snr_range=[0, 0], dm_range=[0, 2000], noise_set=
     if csv_file is not None:
         data_frame = pd.read_csv('./datasets/{}'.format(csv_file), comment='#')
 
-        if 'DM' in data_frame.columns:
-            data_frame['DM'] np.nan
+        if not 'DM' in data_frame.columns:
+            data_frame['DM'] = np.nan
 
         data_frame = data_frame[(data_frame['DM'] > 0) |
                                     (data_frame['DM'].isnull())]
-        if 'P0' in data_frame.columns:
-            data_frame['P0'] np.nan
+        if not 'P0' in data_frame.columns:
+            data_frame['P0'] = np.nan
         data_frame = data_frame[(data_frame['P0'] > 0) |
                                 (data_frame['P0'].isnull())]
 
