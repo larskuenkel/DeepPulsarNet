@@ -1,2 +1,2 @@
 cd ../deeppulsarnet/
-python train_pulsar_net.py --path simset_tutorial_pmps_noise.csv --path_noise pmps_sample_train.csv --name test_model --length 200000 --batch 2  --model_parameter "output_channels 1" --noise 0.1 50 5 0 --mode classifier -e 50
+python train_pulsar_net.py --path simset_tutorial_pmps_noise.csv --path_noise pmps_sample_train.csv --name test_model --length 200000 --batch 2  --model_parameter "output_channels 1" --noise 0.1 50 2 0 --mode classifier -e 50
