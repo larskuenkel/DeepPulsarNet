@@ -22,7 +22,7 @@ def main(obs_file, model):
         file = row['FileName']
         im, clas, clas_single, (cands, cands_target) = net.test_single_file(file)
         softmaxed = F.softmax(clas[0, :2,:], dim=0)
-        max_pred = softmaxed[1,:].max()
+        max_pred = softmaxed[1,:].max().item()
         df.at[index, 'Pulsar Prediction'] = max_pred
         if not cands.nelement() == 0:
             softmaxed_cands = F.softmax(cands[:, :2], dim=1)
