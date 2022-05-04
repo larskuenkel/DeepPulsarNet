@@ -6,7 +6,7 @@ cwd = os.getcwd()
 def replace_paths_in_df(df, path):
     for (index, row) in df.iterrows():
         old_path = row['FileName']
-        new_path = cwd + old_path.split('/')[-1]
+        new_path = path + old_path.split('/')[-1]
         df.at[index, 'FileName'] = new_path
     return df
 
