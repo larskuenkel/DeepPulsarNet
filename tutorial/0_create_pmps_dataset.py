@@ -1,39 +1,43 @@
-import pandas as pd
-import numpy as np
-import glob
 import os
+import pandas as pd
 
-#enter the path where the pmps sample set has been unpacked here
-data_path = os.getcwd()+ '/pmps_sample_set/'
-train_path = data_path+'training/'
-test_path = data_path+'test/'
+cwd = os.getcwd()
 
-train_files = glob.glob(train_path+'*.fil')
-print(f'{len(train_files)} files found')
-psr_names = ['',] * len(train_files)
-periods = [np.nan,] * len(train_files)
-dms = [np.nan,] * len(train_files)
-labels = [2,] * len(train_files)
-snrs = [np.nan,] * len(train_files)
+def replace_paths_in_df(df, path):
+    for (index, row) in df.iterrows():
+        old_path = row['FileName']
+        new_path = cwd + old_path.split('/')[-1]
+        df.at[index, 'FileName'] = new_path
+    return df
 
-data_dict = {'JNAME':psr_names, 'P0':periods, 'DM':dms, 'Label':labels, 'FileName':train_files, 
-             'SNR': snrs}
-df = pd.DataFrame(data=data_dict)
-os.system(f'mkdir ../deeppulsarnet/datasets/')
-df.to_csv(f'../deeppulsarnet/datasets/noiseset_pmps_sample_train.csv')
-print(f"Created: ../deeppulsarnet/datasets/noiseset_pmps_sample_train.csv")
-print(f"To use the set use the option: --path_noise noiseset_pmps_sample_train.csv")
 
-test_files = glob.glob(test_path+'*.fil')
-print(f'{len(test_files)} files found')
-psr_names = ['',] * len(test_files)
-periods = [np.nan,] * len(test_files)
-dms = [np.nan,] * len(test_files)
-labels = [2,] * len(test_files)
-snrs = [np.nan,] * len(test_files)
+if os.path.exists("./pmps_sample_set/"):
+    print("Sample set is located in tutorial folder.")
+else:
+    print("Sample set needs to be downloaded.")
+    os.system('wget -O pmps_obs_sample_v2.tar.gz -c https://uni-bielefeld.sciebo.de/s/LoENwCQgzV8VFMg/download')
+    os.system('tar -xvf pmps_obs_sample_v2.tar.gz')
 
-data_dict = {'JNAME':psr_names, 'P0':periods, 'DM':dms, 'Label':labels, 'FileName':test_files, 
-             'SNR': snrs}
-df = pd.DataFrame(data=data_dict)
-df.to_csv(f'../deeppulsarnet/datasets/noiseset_pmps_sample_test.csv')
-print(f"Created: ../deeppulsarnet/datasets/noiseset_pmps_sample_test.csv")
+if os.path.exists("./pmps_sample_set/pmps_sample_train.csv"):
+    print("Train Data csv is found.")
+else:
+    print("Train Data csv is found. The download failed for some reason.")
+    os._exit(0)
+
+df_train = pd.read_csv('./pmps_sample_set/pmps_sample_train.csv')
+df_test = pd.read_csv('./pmps_sample_set/pmps_sample_test.csv')
+
+df_train = replace_paths_in_df(df_train, cwd + '/pmps_sample_set/training/')
+df_test = replace_paths_in_df(df_test, cwd + '/pmps_sample_set/test/')
+
+print('Paths modified.')
+
+df_train.to_csv('../deeppulsarnet/datasets/pmps_sample_train.csv')
+df_test.to_csv('../deeppulsarnet/datasets/pmps_sample_test.csv')
+
+print('Modified csvs to ../deeppulsarnet/datasets/.')
+
+print(f"Created: ../deeppulsarnet/datasets/pmps_sample_train.csv")
+print(f"To use the set use the option: --path_noise pmps_sample_train.csv")
+
+print(f"The test set can be analysed after training a model with 'python create_model_prediction.py -m test_model.pt -f pmps_sample_test.csv'. ")
