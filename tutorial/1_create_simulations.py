@@ -44,7 +44,7 @@ print(f'{n_files} files will be created.')
 
 #This defines the distributions of the simulated pulsars
 # Uniform distributions with start_value:intervall_length
-flux_dist = np.random.uniform(0.1,0.1,n_files)
+flux_dist = np.random.uniform(0.02,0.02,n_files)
 dm_dist = np.random.uniform(200.,300.,n_files)
 p0_dist = np.random.uniform(0.1,1.5,n_files)
 
