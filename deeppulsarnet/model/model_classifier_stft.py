@@ -128,7 +128,7 @@ def compute_stft(x, length=0, pool_size=0, crop=1000, hop_length=0, norm=0, harm
             bin_power_stft = (bin_stft[:, :crop, :, 0] ** 2 +
                               bin_stft[:, :crop, :, 1] ** 2) / 2
             stack_stft = torch.stack(
-                (ini_power_stft, bin_power_stft, torch.roll(bin_power_stft, 1, -1)), -1)
+                (ini_power_stft, bin_power_stft, torch.roll(bin_power_stft, -1, 1)), -1)
 
             power_stft, _ = torch.max(stack_stft, -1)
 
