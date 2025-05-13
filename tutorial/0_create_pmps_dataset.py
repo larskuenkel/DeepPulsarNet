@@ -15,7 +15,7 @@ if os.path.exists("./pmps_sample_set/"):
     print("Sample set is located in tutorial folder.")
 else:
     print("Sample set needs to be downloaded.")
-    os.system('wget -O pmps_obs_sample_v3.tar.gz -c https://uni-bielefeld.sciebo.de/s/ZJOvxwvEpxleNMx/download')
+    os.system('wget -O pmps_obs_sample_v3.tar.gz -c https://zenodo.org/records/15399789/files/pmps_obs_sample_v3.tar.gz')
     os.system('tar -xvf pmps_obs_sample_v3.tar.gz')
 
 if os.path.exists("./pmps_sample_set/pmps_sample_train.csv"):

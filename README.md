@@ -2,6 +2,10 @@
  
 This Python 3 program allows searching for pulsars in filterbank files using neural networks.
 
+[Dissertation: Lars Künkel - Detecting Pulsars with Neural Networks](https://pub.uni-bielefeld.de/record/2965218)
+
+[Paper: Künkel et al. -  Detecting pulsars with neural networks: a proof of concept ](https://ui.adsabs.harvard.edu/abs/2021MNRAS.506.1111K/abstract)
+
 # Installation
 
 * Install a for your system fitting version of [PyTorch](http://github.com) (Tested on 1.6.0)
