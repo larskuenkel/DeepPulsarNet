@@ -14,7 +14,7 @@ This Python 3 program allows searching for pulsars in filterbank files using neu
 
 # Basic Workflow
 
-* Grab pulsar survey data. One example set of the Parkes Multibeam Survey which already has been sufficiently downsampled can be found [here](https://uni-bielefeld.sciebo.de/s/ZJOvxwvEpxleNMx)\*
+* Grab pulsar survey data. One example set of the Parkes Multibeam Survey which already has been sufficiently downsampled can be found [here](https://zenodo.org/records/15399789)\*
 * Create a training and noise set using `create_training_set.ipynb` and `prepare_noise_set.ipynb` included in ./deeppulsarnet/notebooks
 * Train a neural network using `train_pulsar_net.py`
 	* Example command: `python train_pulsar_net.py --path simset_training_set_1_noise.csv --path_noise noiseset_noise_sample.csv --name test_model --length 100000`
